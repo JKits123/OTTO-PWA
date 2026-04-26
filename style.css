@@ -1,1 +1,147 @@
-body{text-align:center;font-family:Arial;}button{padding:10px;}input{padding:10px;}
+:root{
+  --green:#16a34a;
+  --green-dark:#15803d;
+  --soft:#f6f8f7;
+  --line:#dfe7e2;
+  --text:#0f172a;
+  --muted:#64748b;
+  --warn:#b45309;
+  --bad:#b91c1c;
+  --good:#15803d;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background:#ffffff;
+  color:var(--text);
+}
+.app-header{
+  padding:22px 18px 16px;
+  background:linear-gradient(135deg,#ffffff 0%,#eefaf1 100%);
+  border-bottom:1px solid var(--line);
+  position:sticky;
+  top:0;
+  z-index:2;
+}
+.brand-row{
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+.otto-icon{
+  width:52px;height:52px;border-radius:16px;
+  background:var(--green); color:white;
+  display:flex;align-items:center;justify-content:center;
+  font-size:26px; box-shadow:0 8px 18px rgba(22,163,74,.18);
+}
+h1{margin:0;font-size:34px;letter-spacing:.5px}
+p{margin:3px 0 0;color:var(--muted)}
+.pill{
+  display:inline-block;
+  margin-top:14px;
+  padding:8px 12px;
+  border-radius:999px;
+  background:#fff;
+  border:1px solid var(--line);
+  color:var(--green-dark);
+  font-weight:700;
+  font-size:13px;
+}
+main{padding:16px;max-width:920px;margin:auto}
+.smart-card,.panel{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:22px;
+  padding:16px;
+  box-shadow:0 8px 24px rgba(15,23,42,.06);
+}
+label{font-weight:800;display:block;margin-bottom:8px}
+.smart-row{display:flex;gap:8px}
+input,select{
+  width:100%;
+  padding:13px 12px;
+  border:1px solid #cbd5e1;
+  border-radius:12px;
+  font-size:16px;
+  background:#fff;
+}
+button{
+  border:0;
+  border-radius:12px;
+  padding:12px 14px;
+  background:var(--green);
+  color:#fff;
+  font-weight:800;
+  font-size:15px;
+  cursor:pointer;
+}
+button:active{transform:scale(.98)}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin-top:16px;
+}
+.tool-card{
+  text-align:left;
+  min-height:128px;
+  background:#fff;
+  color:var(--text);
+  border:1px solid var(--line);
+  box-shadow:0 8px 22px rgba(15,23,42,.06);
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.tool-card span{font-size:30px}
+.tool-card strong{font-size:17px}
+.tool-card small{color:var(--muted);line-height:1.25}
+.panel{margin-top:16px}
+.hidden{display:none}
+.panel-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  border-bottom:1px solid var(--line);
+  margin-bottom:14px;
+}
+.panel-head h2{margin:0 0 12px}
+.ghost{
+  background:#f1f5f9;
+  color:var(--text);
+  padding:9px 12px;
+}
+.form-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+.field{margin-bottom:12px}
+.field label{font-size:13px;color:#334155}
+.result{
+  margin-top:12px;
+  padding:14px;
+  background:#f8fafc;
+  border:1px solid var(--line);
+  border-radius:16px;
+  line-height:1.6;
+}
+.result strong{font-size:20px}
+.result .good{color:var(--good);font-weight:900}
+.result .warn{color:var(--warn);font-weight:900}
+.result .bad{color:var(--bad);font-weight:900}
+.muted{color:var(--muted)}
+.calc-btn{width:100%;margin-top:4px}
+footer{
+  padding:22px 16px 34px;
+  text-align:center;
+  color:var(--muted);
+  font-size:13px;
+}
+@media (max-width:640px){
+  .grid{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
+  h1{font-size:30px}
+}

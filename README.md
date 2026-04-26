@@ -1,21 +1,15 @@
-# OTTO-PWA
-HVAC Calculator &amp; Converstion Tool
 # OTTO HVAC Toolkit
 
-OTTO is a Progressive Web App (PWA) designed for HVAC engineers to perform quick site calculations and conversions.
+OTTO is a mobile-friendly Progressive Web App for HVAC, air conditioning, refrigeration and building services calculations.
 
-## Features
-- Duct area calculator
-- Pressure conversion (mmH2O ↔ Pa)
-- Mobile-friendly interface
-- Offline capability
+## Current tools
+- Duct area and velocity
+- Pressure conversion
+- Airflow conversion through duct tool
+- Grille free area
+- kW / BTU/hr / TR conversion
+- Water flow from kW and ΔT
+- Room volume and ACH
 
-## Installation
-1. Open in Safari
-2. Add to Home Screen
-
-## Future Development
-- Airflow & velocity tools
-- Refrigeration calculations
-- Fan laws
-- Electrical tools
+## Install
+Open the GitHub Pages link in Safari and choose Add to Home Screen.

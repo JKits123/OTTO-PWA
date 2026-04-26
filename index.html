@@ -1,28 +1,82 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OTTO</title>
-<link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>OTTO HVAC Toolkit</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <meta name="theme-color" content="#16a34a" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<h1>OTTO</h1>
+  <header class="app-header">
+    <div class="brand-row">
+      <div class="otto-icon">⚙️</div>
+      <div>
+        <h1>OTTO</h1>
+        <p>Small calculator. Big brain.</p>
+      </div>
+    </div>
+    <div class="pill">HVAC • AC • Refrigeration</div>
+  </header>
 
-<div>
-<h3>Duct Area</h3>
-<input id="d" placeholder="mm">
-<button onclick="a()">Calc</button>
-<p id="out"></p>
-</div>
+  <main>
+    <section class="smart-card">
+      <label for="smartInput">Smart quick input</label>
+      <div class="smart-row">
+        <input id="smartInput" placeholder="Try: 630 duct 900 l/s  or  10 mmH2O to Pa" />
+        <button onclick="runSmart()">Go</button>
+      </div>
+      <div id="smartResult" class="result muted">Type a quick site calculation above.</div>
+    </section>
 
-<div>
-<h3>Pressure</h3>
-<input id="p" placeholder="mmH2O">
-<button onclick="b()">Convert</button>
-<p id="out2"></p>
-</div>
+    <section class="grid">
+      <button class="tool-card" onclick="openTool('duct')">
+        <span>🌪️</span>
+        <strong>Duct & Airflow</strong>
+        <small>Area, velocity, l/s, m³/h, CFM</small>
+      </button>
+      <button class="tool-card" onclick="openTool('pressure')">
+        <span>🧭</span>
+        <strong>Pressure</strong>
+        <small>Pa, mmH₂O, in.wg, kPa, PSI</small>
+      </button>
+      <button class="tool-card" onclick="openTool('grille')">
+        <span>▤</span>
+        <strong>Grilles</strong>
+        <small>Free area, face velocity</small>
+      </button>
+      <button class="tool-card" onclick="openTool('heat')">
+        <span>🔥❄️</span>
+        <strong>Heating / Cooling</strong>
+        <small>kW, BTU/hr, TR</small>
+      </button>
+      <button class="tool-card" onclick="openTool('water')">
+        <span>💧</span>
+        <strong>Water Flow</strong>
+        <small>kW and ΔT to l/s</small>
+      </button>
+      <button class="tool-card" onclick="openTool('room')">
+        <span>🏢</span>
+        <strong>Room / ACH</strong>
+        <small>Volume and air changes</small>
+      </button>
+    </section>
 
-<script src="app.js"></script>
+    <section id="toolPanel" class="panel hidden">
+      <div class="panel-head">
+        <h2 id="panelTitle">Tool</h2>
+        <button class="ghost" onclick="closeTool()">Close</button>
+      </div>
+      <div id="panelBody"></div>
+    </section>
+  </main>
+
+  <footer>
+    OTTO v0.4 • Built for site use • Works offline after first load
+  </footer>
+
+  <script src="app.js"></script>
 </body>
 </html>
