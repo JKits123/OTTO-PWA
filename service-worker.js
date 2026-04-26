@@ -1,0 +1,1 @@
+self.addEventListener('install',e=>{e.waitUntil(caches.open('otto').then(c=>c.addAll(['./'])));});
