@@ -18,44 +18,118 @@
         <p>Small calculator. Big brain.</p>
       </div>
     </div>
-    <div class="pill">HVAC • AC • Refrigeration</div>
+    <div class="header-meta">
+      <div class="pill">HVAC • AC • Refrigeration</div>
+      <div class="mode-toggle" role="tablist" aria-label="Operational mode">
+        <button id="modeDesign" class="mode-btn active" role="tab" aria-selected="true" onclick="setMode('design')">Design</button>
+        <button id="modeSite" class="mode-btn" role="tab" aria-selected="false" onclick="setMode('site')">Site</button>
+      </div>
+    </div>
   </header>
 
   <main>
     <section class="smart-card">
       <label for="smartInput">Smart quick input</label>
       <div class="smart-row">
-        <input id="smartInput" placeholder="Try: 630 duct 900 l/s  or  10 mmH2O to Pa" />
+        <input id="smartInput" placeholder="Try: 630 duct 900 l/s  •  10 mmH2O to Pa  •  superheat r32 7C 5bar" />
+        <button id="micBtn" class="ghost mic-btn" onclick="toggleMic()" title="Push to talk">🎙️</button>
         <button onclick="runSmart()">Go</button>
       </div>
-      <div id="smartResult" class="result muted">Type a quick site calculation above.</div>
+      <div id="smartResult" class="result muted">Type, dictate, or paste a quick site calculation above.</div>
     </section>
 
+    <h3 class="section-title">Air Systems &amp; Ventilation</h3>
     <section class="grid">
       <button class="tool-card" onclick="openTool('duct')">
         <span>🌪️</span>
-        <strong>Duct & Airflow</strong>
-        <small>Area, velocity, l/s, m³/h, CFM</small>
+        <strong>Duct &amp; Airflow</strong>
+        <small>Circular, rectangular, flat-oval • velocity</small>
       </button>
-      <button class="tool-card" onclick="openTool('pressure')">
-        <span>🧭</span>
-        <strong>Pressure</strong>
-        <small>Pa, mmH₂O, in.wg, kPa, PSI</small>
+      <button class="tool-card" onclick="openTool('friction')">
+        <span>📉</span>
+        <strong>Duct Friction</strong>
+        <small>Pa/m • Darcy-Weisbach (Colebrook)</small>
       </button>
       <button class="tool-card" onclick="openTool('grille')">
         <span>▤</span>
         <strong>Grilles</strong>
         <small>Free area, face velocity</small>
       </button>
+      <button class="tool-card" onclick="openTool('psych')">
+        <span>💨</span>
+        <strong>Psychrometrics</strong>
+        <small>Dew point, enthalpy, W, mixed air, SHR</small>
+      </button>
+    </section>
+
+    <h3 class="section-title">Water &amp; Public Health</h3>
+    <section class="grid">
+      <button class="tool-card" onclick="openTool('water')">
+        <span>💧</span>
+        <strong>Water Flow</strong>
+        <small>kW &amp; ΔT • water / EG / PG</small>
+      </button>
+      <button class="tool-card" onclick="openTool('pipe')">
+        <span>🪈</span>
+        <strong>Pipe Friction</strong>
+        <small>Hazen-Williams • steel / copper / plastic</small>
+      </button>
+      <button class="tool-card" onclick="openTool('expansion')">
+        <span>🛢️</span>
+        <strong>Expansion / Pump</strong>
+        <small>Vessel sizing • pump duty</small>
+      </button>
+    </section>
+
+    <h3 class="section-title">Refrigeration</h3>
+    <section class="grid">
+      <button class="tool-card" onclick="openTool('refcycle')">
+        <span>❄️</span>
+        <strong>Superheat / Subcool</strong>
+        <small>Saturation lookup R32, R410A, R134a, R290</small>
+      </button>
+      <button class="tool-card" onclick="openTool('fgas')">
+        <span>🌍</span>
+        <strong>F-Gas / CO₂e</strong>
+        <small>Charge × GWP → tCO₂e leak threshold</small>
+      </button>
+      <button class="tool-card" onclick="openTool('refsat')">
+        <span>📊</span>
+        <strong>Refrigerant Lookup</strong>
+        <small>P↔T saturation tables</small>
+      </button>
+    </section>
+
+    <h3 class="section-title">Electrical</h3>
+    <section class="grid">
+      <button class="tool-card" onclick="openTool('ohm')">
+        <span>⚡</span>
+        <strong>Ohm &amp; 3-Phase</strong>
+        <small>V, I, R, P • single &amp; three phase</small>
+      </button>
+      <button class="tool-card" onclick="openTool('vdrop')">
+        <span>📏</span>
+        <strong>Voltage Drop</strong>
+        <small>Cable length • CSA • current</small>
+      </button>
+      <button class="tool-card" onclick="openTool('motor')">
+        <span>🔧</span>
+        <strong>Motor Heat Gain</strong>
+        <small>kW × (1 − η) • plant room load</small>
+      </button>
+    </section>
+
+    <h3 class="section-title">General Conversions</h3>
+    <section class="grid">
+      <button class="tool-card" onclick="openTool('pressure')">
+        <span>🧭</span>
+        <strong>Pressure</strong>
+        <small>Pa, mmH₂O, in.wg, kPa, bar, PSI</small>
+      </button>
       <button class="tool-card" onclick="openTool('heat')">
         <span>🔥❄️</span>
         <strong>Heating / Cooling</strong>
         <small>kW, BTU/hr, TR</small>
-      </button>
-      <button class="tool-card" onclick="openTool('water')">
-        <span>💧</span>
-        <strong>Water Flow</strong>
-        <small>kW and ΔT to l/s</small>
       </button>
       <button class="tool-card" onclick="openTool('room')">
         <span>🏢</span>
@@ -64,7 +138,16 @@
       </button>
     </section>
 
-    <section id="toolPanel" class="panel hidden">
+    <h3 class="section-title">Diagnostics <span class="badge-site">Site mode</span></h3>
+    <section class="grid">
+      <button class="tool-card wide" onclick="openTool('explain')">
+        <span>🩺</span>
+        <strong>Explain My Readings</strong>
+        <small>Compare current vs design / previous • detect filter loading, blockage, dirty coil, damper drift</small>
+      </button>
+    </section>
+
+    <section id="toolPanel" class="panel hidden" aria-live="polite">
       <div class="panel-head">
         <h2 id="panelTitle">Tool</h2>
         <button class="ghost" onclick="closeTool()">Close</button>
@@ -74,7 +157,7 @@
   </main>
 
   <footer>
-    OTTO v0.4 • Built for site use • Works offline after first load
+    OTTO v1.2 • Built for site use • Works offline after first load • Assumes ρ<sub>air</sub> = 1.2 kg/m³
   </footer>
 
   <script src="app.js"></script>

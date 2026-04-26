@@ -1,4 +1,4 @@
-const CACHE_NAME = "otto-cache-v04";
+const CACHE_NAME = "otto-cache-v12";
 const FILES_TO_CACHE = [
   "./",
   "./index.html",
