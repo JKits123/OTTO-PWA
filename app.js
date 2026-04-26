@@ -172,46 +172,303 @@ function toggleMic(){
   r.start();
 }
 
-/* ---------- Smart input parser ---------- */
-function runSmart(){
-  const s = $("smartInput").value.toLowerCase().trim();
-  const nums = s.match(/[-+]?\d*\.?\d+/g)?.map(Number) || [];
-  let out = "I couldn't parse that yet. Try: <em>630 duct 900 l/s</em>, <em>10 mmH2O to Pa</em>, <em>5 kW</em>, <em>superheat r32 7C 8 bar</em>, <em>vdrop 32A 50m 4mm</em>";
+/* ---------- Smart input parser (V1.2 — natural-phrase) ----------
+   Each handler has match(s) → bool and run(s, nums) → html|null.
+   First handler whose match passes AND whose run returns truthy wins.
+   Specific tools first; generic conversions last so they catch leftovers. */
 
-  if (s.includes("superheat") || s.includes("subcool")){
-    const ref = ["r32","r410a","r134a","r290"].find(k => s.includes(k))?.toUpperCase();
-    if (ref && nums.length >= 2){
-      const refKey = ref === "R410A" ? "R410A" : ref;
-      const tMeas = nums[0], pBar = nums[1];
-      const tSat = pToT(refKey, pBar);
-      const sh   = tMeas - tSat;
-      const verb = s.includes("subcool") ? "Subcool" : "Superheat";
-      const val  = s.includes("subcool") ? -sh : sh;
-      out = `${verb} for <strong>${refKey}</strong> at ${pBar} bar, ${tMeas}°C measured:<br>
-             T<sub>sat</sub> = <strong>${fmt(tSat,1)} °C</strong><br>${verb} = <strong>${fmt(val,1)} K</strong>`;
-    }
-  } else if (s.includes("vdrop") && nums.length >= 3){
-    const I = nums[0], L = nums[1], csa = nums[2];
-    const vd = (2 * I * L * 0.0224) / csa; // single-phase, copper, 70°C
-    out = `Voltage drop (1-phase, Cu): ${I} A × ${L} m / ${csa} mm² ≈ <strong>${fmt(vd,2)} V</strong>`;
-  } else if (s.includes("duct") && nums.length >= 1){
-    const d = nums[0]/1000, area = Math.PI * Math.pow(d/2, 2);
-    out = `Duct area = <strong>${fmt(area,3)} m²</strong>`;
-    if (nums.length >= 2){
-      const q = nums[1]/1000;
-      const vel = q/area;
-      out += `<br>Velocity at ${nums[1]} l/s = <strong>${fmt(vel,2)} m/s</strong> ${velBadge(vel)}`;
-    }
-  } else if ((s.includes("mmh2o") || s.includes("mm h2o") || s.includes("mmwg")) && nums.length >= 1){
-    out = `${nums[0]} mmH₂O = <strong>${fmt(nums[0]*9.80665,1)} Pa</strong>`;
-  } else if (s.includes("kw") && nums.length >= 1){
-    out = `${nums[0]} kW = <strong>${fmt(nums[0]*3412.142,0)} BTU/hr</strong> = ${fmt(nums[0]/3.51685,2)} TR`;
-  } else if (s.includes("ach") && nums.length >= 4){
-    const vol = nums[0]*nums[1]*nums[2];
-    const ach = (nums[3]*3.6)/vol;
-    out = `Volume ${fmt(vol,1)} m³, ACH = <strong>${fmt(ach,2)}</strong>`;
+function detectRef(s){
+  if (/\br32\b/.test(s))               return "R32";
+  if (/\br410a?\b/.test(s))            return "R410A";
+  if (/\br134a?\b/.test(s))            return "R134a";
+  if (/\br290\b|propane/.test(s))      return "R290";
+  return null;
+}
+function detectMaterial(s){
+  if (/copper/.test(s))                       return "copper";
+  if (/plastic|pex|hdpe|mdpe|ppr/.test(s))    return "plastic";
+  return "steel";
+}
+function extractFirst(s, unitPattern){
+  const m = s.match(new RegExp(`([-+]?\\d*\\.?\\d+)\\s*(?:${unitPattern})`, "i"));
+  return m ? parseFloat(m[1]) : null;
+}
+function extractFlowMs(s){
+  const pats = [
+    [/([-+]?\d*\.?\d+)\s*(?:l\/s|ls\b|litres?\s*(?:per|\/)?\s*second)/i,           1/1000],
+    [/([-+]?\d*\.?\d+)\s*(?:m3\/h|m3h|m³\/h|m\^3\/h|cubic\s*metres?\s*per\s*hour)/i, 1/3600],
+    [/([-+]?\d*\.?\d+)\s*(?:cfm|cubic\s*feet\s*per\s*minute)/i,                    0.00047194745],
+    [/([-+]?\d*\.?\d+)\s*(?:m3\/s|m³\/s)/i,                                        1],
+  ];
+  for (const [re,f] of pats){ const m = s.match(re); if (m) return parseFloat(m[1])*f; }
+  return null;
+}
+function extractPressurePa(s){
+  const pats = [
+    [/([-+]?\d*\.?\d+)\s*(?:mmh2o|mmwg|mm\s*h2o|mm\s*wg)\b/i,         9.80665, "mmH₂O"],
+    [/([-+]?\d*\.?\d+)\s*(?:in\.?wg|inwc|inches?\s*w(?:ater)?\s*g(?:auge)?)\b/i, 249.0889, "in.wg"],
+    [/([-+]?\d*\.?\d+)\s*kpa\b/i,                                     1000,    "kPa"],
+    [/([-+]?\d*\.?\d+)\s*bar(?!g)\b/i,                                100000,  "bar"],
+    [/([-+]?\d*\.?\d+)\s*psi\b/i,                                     6894.757,"PSI"],
+    [/([-+]?\d*\.?\d+)\s*pa\b/i,                                      1,       "Pa"],
+  ];
+  for (const [re,f,label] of pats){
+    const m = s.match(re);
+    if (m) return { pa: parseFloat(m[1])*f, src: `${m[1]} ${label}` };
   }
-  $("smartResult").innerHTML = out;
+  return null;
+}
+function extractRH(s){
+  return extractFirst(s, "%(?:\\s*rh)?")
+      ?? extractFirst(s, "percent(?:\\s*rh|\\s*relative)?")
+      ?? extractFirst(s, "rh\\b");
+}
+function extractTempC(s){
+  return extractFirst(s, "°c|degrees?\\s*c?|deg\\s*c?|c\\b");
+}
+function extractMetres(s){
+  return extractFirst(s, "metres?\\b") ?? extractFirst(s, "m(?!m)(?!\\/s)(?!\\/min)\\b");
+}
+
+const SMART_TIPS = `<br><br><small class="muted">
+Try: <em>"area of a 630mm duct"</em> • <em>"velocity in 600 by 300 duct at 500 l/s"</em> •
+<em>"superheat R32 at 8 bar 12 degrees"</em> • <em>"flow for 10 kW at 5 K"</em> •
+<em>"dew point 22 degrees 50%"</em> • <em>"5 bar to Pa"</em> • <em>"300 CFM to l/s"</em> •
+<em>"F-Gas 5 kg R32"</em> • <em>"voltage drop 32A 50m 4mm"</em>.</small>`;
+
+const SMART = [
+  /* ---- Refrigeration ---- */
+  { match: s => /superheat|super[\s-]?heat/.test(s),
+    run: s => {
+      const ref = detectRef(s); if (!ref) return null;
+      const tMeas = extractTempC(s);
+      const press = extractPressurePa(s);
+      const pBar  = press ? press.pa/100000 : extractFirst(s, "bar(?:g)?");
+      if (tMeas == null || pBar == null) return null;
+      const tSat = pToT(ref, pBar+1);
+      const sh   = tMeas - tSat;
+      const tag  = sh < 3 ? "<span class='bad'>Low — flood-back risk</span>"
+                : sh > 12 ? "<span class='bad'>High — undercharge / TXV starving</span>"
+                : sh > 8  ? "<span class='warn'>High end</span>"
+                :           "<span class='good'>Within typical band</span>";
+      return `Superheat — <strong>${ref}</strong> @ ${pBar} barg, ${tMeas}°C measured<br>
+              T<sub>sat</sub> = <strong>${fmt(tSat,1)} °C</strong> → SH = <strong>${fmt(sh,1)} K</strong> ${tag}`;
+    }},
+  { match: s => /subcool|sub[\s-]?cool/.test(s),
+    run: s => {
+      const ref = detectRef(s); if (!ref) return null;
+      const tMeas = extractTempC(s);
+      const press = extractPressurePa(s);
+      const pBar  = press ? press.pa/100000 : extractFirst(s, "bar(?:g)?");
+      if (tMeas == null || pBar == null) return null;
+      const tSat = pToT(ref, pBar+1);
+      const sc   = tSat - tMeas;
+      const tag  = sc < 3 ? "<span class='bad'>Low — undercharge / flash gas</span>"
+                : sc > 15 ? "<span class='warn'>High — overcharge / restricted</span>"
+                :           "<span class='good'>Within typical 5–10 K band</span>";
+      return `Subcool — <strong>${ref}</strong> @ ${pBar} barg, ${tMeas}°C liquid<br>
+              T<sub>sat</sub> = <strong>${fmt(tSat,1)} °C</strong> → SC = <strong>${fmt(sc,1)} K</strong> ${tag}`;
+    }},
+  { match: s => /\bf[\s-]?gas\b|co2e|co₂e/.test(s),
+    run: s => {
+      const ref = detectRef(s); if (!ref) return null;
+      const kg  = extractFirst(s, "kg|kilograms?");
+      if (kg == null) return null;
+      const gwp = GWP[ref] || 0;
+      const tco2 = kg*gwp/1000;
+      const interval = tco2 < 5  ? "no mandatory check"
+                     : tco2 < 50 ? "12-monthly checks"
+                     : tco2 < 500? "6-monthly (3-monthly without leak detection)"
+                     :             "3-monthly with permanent leak detection";
+      return `<strong>${kg} kg ${ref}</strong> × GWP ${gwp} = <strong>${fmt(tco2,2)} tCO₂e</strong><br>
+              F-Gas: ${interval}`;
+    }},
+  { match: s => /\bt[\s-]?sat\b|saturation|sat\.?\s*(?:p|t|press|temp)/.test(s),
+    run: s => {
+      const ref = detectRef(s); if (!ref) return null;
+      const press = extractPressurePa(s);
+      const pBar  = press ? press.pa/100000 : extractFirst(s, "bar(?:a|g)?");
+      const t     = extractTempC(s);
+      if (pBar != null) return `${ref} sat @ <strong>${pBar} bar abs</strong> → T = <strong>${fmt(pToT(ref, pBar),1)} °C</strong>`;
+      if (t    != null) return `${ref} sat @ <strong>${t} °C</strong> → P = <strong>${fmt(tToP(ref, t),2)} bar abs</strong> (${fmt(tToP(ref,t)-1,2)} barg)`;
+      return null;
+    }},
+
+  /* ---- Psychrometrics ---- */
+  { match: s => /dew\s*point|enthalpy|humidity\s*ratio|psychro/.test(s),
+    run: s => {
+      const t = extractTempC(s), rh = extractRH(s);
+      if (t == null || rh == null) return null;
+      const ps = pSat(t), pw = (rh/100)*ps;
+      const W  = 0.622*pw/(P_ATM-pw);
+      const h  = 1.006*t + W*(2501 + 1.86*t);
+      const td = dewPoint(pw);
+      const lead = /enthalpy/.test(s)         ? `Enthalpy h = <strong>${fmt(h,2)} kJ/kg</strong>`
+                 : /humidity\s*ratio/.test(s) ? `Humidity ratio W = <strong>${fmt(W*1000,2)} g/kg</strong>`
+                 :                              `Dew point = <strong>${fmt(td,1)} °C</strong>`;
+      return `${t}°C, ${rh}% RH → ${lead}<br>
+              <small class="muted">Also: W ${fmt(W*1000,2)} g/kg • h ${fmt(h,2)} kJ/kg • Tdp ${fmt(td,1)} °C</small>`;
+    }},
+
+  /* ---- Electrical ---- */
+  { match: s => /v[\s-]?drop|voltage\s*drop/.test(s),
+    run: (s, nums) => {
+      const I   = extractFirst(s, "a(?:mps?)?\\b") ?? nums[0];
+      const L   = extractMetres(s)                  ?? nums[1];
+      const csa = extractFirst(s, "mm[²2]?\\b")    ?? nums[2];
+      if (I == null || L == null || csa == null) return null;
+      const tri = /3\s*[-]?\s*phase|three\s*phase/.test(s);
+      const factor = tri ? Math.sqrt(3) : 2;
+      const vd = factor * I * L * 0.0224 / csa;
+      const sys = tri ? 400 : 230;
+      const pct = vd/sys*100;
+      const tag = pct<=3 ? "<span class='good'>≤ 3% lighting</span>"
+                : pct<=5 ? "<span class='warn'>≤ 5% power</span>"
+                :          "<span class='bad'>Exceeds 5% — uprate cable</span>";
+      return `Voltage drop ≈ <strong>${fmt(vd,2)} V</strong> (${fmt(pct,1)}% of ${sys} V) ${tag}<br>
+              <small class="muted">${I} A × ${L} m / ${csa} mm² Cu @ 70°C${tri?" (3-phase)":""}</small>`;
+    }},
+  { match: s => /motor\s*(?:heat|gain)/.test(s),
+    run: s => {
+      const kw  = extractFirst(s, "kw\\b");
+      const eff = extractFirst(s, "%");
+      if (kw == null || eff == null) return null;
+      const losses = kw*(1-eff/100);
+      return `Motor — ${kw} kW @ ${eff}% η: losses <strong>${fmt(losses,2)} kW</strong> (full input ${kw} kW if motor inside conditioned space)`;
+    }},
+  { match: s => (/\b3\s*[-]?\s*phase|three\s*phase|\bohm\b/.test(s)) || (/\bpower\b/.test(s) && /\bv\b/.test(s) && /\ba\b/.test(s)),
+    run: s => {
+      const V  = extractFirst(s, "v(?:olts?)?\\b");
+      const I  = extractFirst(s, "a(?:mps?)?\\b");
+      const pf = extractFirst(s, "pf|power\\s*factor") ?? 0.85;
+      if (V == null || I == null) return null;
+      const tri = /3\s*[-]?\s*phase|three\s*phase/.test(s);
+      const P   = tri ? Math.sqrt(3)*V*I*pf : V*I*pf;
+      return `${tri?"3-phase":"1-phase"}: ${V} V × ${I} A × pf ${pf} → <strong>${fmt(P/1000,2)} kW</strong>`;
+    }},
+
+  /* ---- Water / Hydronic ---- */
+  { match: s => /(?:water\s*flow|chiller|boiler|flow\s*(?:for|of))/.test(s) && /kw\b/.test(s),
+    run: s => {
+      const kw = extractFirst(s, "kw\\b");
+      const dt = extractFirst(s, "delta\\s*t|dt\\b|°c|degrees?|deg|k\\b");
+      if (kw == null || dt == null) return null;
+      const ls = kw/(CP_W*dt);
+      return `Water flow — ${kw} kW ÷ (4.186 × ${dt}) = <strong>${fmt(ls,3)} l/s</strong> (${fmt(ls*60,1)} l/min, ${fmt(ls*3.6,2)} m³/h)`;
+    }},
+  { match: s => /\bpump\b/.test(s),
+    run: s => {
+      const ls   = extractFirst(s, "l\\/s|ls\\b");
+      const head = extractMetres(s);
+      const eff  = extractFirst(s, "%") ?? 65;
+      if (ls == null || head == null) return null;
+      const Q = ls/1000;
+      const kwHyd = RHO_W*G*Q*head/1000;
+      const kwShaft = kwHyd/(eff/100);
+      return `Pump — ${ls} l/s @ ${head} m head: hydraulic <strong>${fmt(kwHyd,2)} kW</strong>, shaft @ ${eff}% η <strong>${fmt(kwShaft,2)} kW</strong>`;
+    }},
+  { match: s => /(?:pipe|hazen).*(?:friction|head\s*loss)|(?:friction|head\s*loss).*pipe/.test(s),
+    run: s => {
+      const dMm = extractFirst(s, "mm\\b");
+      const ls  = extractFirst(s, "l\\/s|ls\\b");
+      if (dMm == null || ls == null) return null;
+      const mat = detectMaterial(s);
+      const C = HW_C[mat];
+      const dM = dMm/1000, qm3s = ls/1000;
+      const hL = 10.67 * Math.pow(qm3s,1.852) / (Math.pow(C,1.852)*Math.pow(dM,4.87));
+      return `Pipe friction (${mat}, C=${C}) — Ø${dMm} mm @ ${ls} l/s = <strong>${fmt(hL*1000,2)} mm/m</strong> (${fmt(hL*RHO_W*G,1)} Pa/m)`;
+    }},
+
+  /* ---- Air systems ---- */
+  { match: s => /duct.*(?:friction|pa\/m|head\s*loss)|(?:friction|pa\/m|head\s*loss).*duct/.test(s),
+    run: s => {
+      const dMm = extractFirst(s, "mm\\b");
+      const flow = extractFlowMs(s);
+      if (dMm == null || flow == null) return null;
+      const dh = dMm/1000;
+      const area = Math.PI*Math.pow(dh/2,2);
+      const vel = flow/area;
+      const Re  = vel*dh/NU_AIR;
+      const f   = Re < 2300 ? 64/Re : colebrook(0.15/dMm, Re);
+      const dpm = f*(RHO_AIR*vel*vel)/(2*dh);
+      return `Duct friction — Ø${dMm} mm @ ${fmt(vel,2)} m/s: <strong>${fmt(dpm,2)} Pa/m</strong> (Re ${fmt(Re,0)})`;
+    }},
+  { match: s => /\bduct\b/.test(s) && /(\d+(?:\.\d+)?)\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)/i.test(s),
+    run: s => {
+      const m = s.match(/(\d+(?:\.\d+)?)\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)/i);
+      const w = parseFloat(m[1])/1000, h = parseFloat(m[2])/1000;
+      const area = w*h;
+      const flow = extractFlowMs(s);
+      let out = `Rectangular duct ${m[1]}×${m[2]} mm → area = <strong>${fmt(area,4)} m²</strong>`;
+      if (flow != null){
+        const vel = flow/area;
+        out += `<br>Velocity at ${fmt(flow*1000,0)} l/s = <strong>${fmt(vel,2)} m/s</strong> ${velBadge(vel)}`;
+      }
+      return out;
+    }},
+  { match: s => /\bduct\b/.test(s),
+    run: s => {
+      const dMm = extractFirst(s, "mm\\b") ?? (() => {
+        const m = s.match(/(\d{2,4})\s*(?:duct|diameter|dia\b)/);
+        return m ? parseFloat(m[1]) : null;
+      })();
+      if (dMm == null) return null;
+      const area = Math.PI*Math.pow(dMm/1000/2, 2);
+      const flow = extractFlowMs(s);
+      const askedVel = extractFirst(s, "m\\/s|metres?\\s*per\\s*second");
+      let out = `Circular duct Ø${dMm} mm → area = <strong>${fmt(area,4)} m²</strong>`;
+      if (flow != null){
+        const vel = flow/area;
+        out += `<br>Velocity at ${fmt(flow*1000,0)} l/s = <strong>${fmt(vel,2)} m/s</strong> ${velBadge(vel)}`;
+      } else if (askedVel != null){
+        const q = area*askedVel;
+        out += `<br>Flow at ${askedVel} m/s = <strong>${fmt(q*1000,0)} l/s</strong> (${fmt(q*3600,0)} m³/h)`;
+      }
+      return out;
+    }},
+  { match: s => /\bach\b|air\s*chang/.test(s),
+    run: (s, nums) => {
+      if (nums.length < 4) return null;
+      const [L,W,H,Q] = nums;
+      const vol = L*W*H;
+      const ach = (Q*3.6)/vol;
+      return `Volume ${fmt(vol,1)} m³ • Airflow ${Q} l/s → ACH = <strong>${fmt(ach,2)}</strong>`;
+    }},
+
+  /* ---- General conversions (fallback catch-all) ---- */
+  { match: s => extractPressurePa(s) !== null,
+    run: s => {
+      const p = extractPressurePa(s); if (!p) return null;
+      return `${p.src} = <strong>${fmt(p.pa,1)} Pa</strong> = ${fmt(p.pa/1000,3)} kPa = ${fmt(p.pa/9.80665,2)} mmH₂O = ${fmt(p.pa/249.0889,3)} in.wg = ${fmt(p.pa/100000,5)} bar = ${fmt(p.pa/6894.757,4)} PSI`;
+    }},
+  { match: s => extractFlowMs(s) !== null,
+    run: s => {
+      const qms = extractFlowMs(s); if (qms == null) return null;
+      return `Airflow ≈ <strong>${fmt(qms*1000,0)} l/s</strong> = ${fmt(qms*3600,0)} m³/h = ${fmt(qms/0.00047194745,0)} CFM = ${fmt(qms,4)} m³/s`;
+    }},
+  { match: s => /\bkw\b|btu|\btr\b|tons?\s*(?:of)?\s*(?:ref|cooling)?/.test(s),
+    run: s => {
+      const kw  = extractFirst(s, "kw\\b");
+      const btu = extractFirst(s, "btu(?:\\/h(?:r)?)?");
+      const tr  = extractFirst(s, "tr\\b|tons?");
+      let kwVal = kw != null ? kw : btu != null ? btu/3412.142 : tr != null ? tr*3.51685 : null;
+      if (kwVal == null) return null;
+      return `<strong>${fmt(kwVal,2)} kW</strong> = ${fmt(kwVal*3412.142,0)} BTU/hr = ${fmt(kwVal/3.51685,2)} TR`;
+    }},
+];
+
+function runSmart(){
+  const raw = $("smartInput").value;
+  const s   = raw.toLowerCase().trim();
+  if (!s){ $("smartResult").innerHTML = "Type, dictate, or paste a quick site calculation above."; return; }
+  const nums = (s.match(/[-+]?\d*\.?\d+/g) || []).map(Number);
+  for (const h of SMART){
+    if (h.match(s)){
+      const out = h.run(s, nums);
+      if (out){ $("smartResult").innerHTML = out; return; }
+    }
+  }
+  $("smartResult").innerHTML = `I couldn't parse <em>"${raw}"</em>.${SMART_TIPS}`;
 }
 
 /* ==========================================================================
