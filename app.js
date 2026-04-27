@@ -87,7 +87,7 @@ function setMode(m){
 
 /* ---------- Tool registry ---------- */
 const TOOLS = {
-  duct:      { title: "Duct & Airflow",            html: ductHTML,       calc: calcDuct },
+  duct:      { title: "Duct Sizer (live)",         html: ductHTML,       calc: recomputeDuct, init: ductInit },
   friction:  { title: "Duct Friction Loss",        html: frictionHTML,   calc: calcFriction },
   grille:    { title: "Grille / Free Area",        html: grilleHTML,     calc: calcGrille },
   psych:     { title: "Psychrometrics",            html: psychHTML,      calc: calcPsych },
@@ -113,6 +113,7 @@ function openTool(key){
   panelTitle.textContent = t.title;
   STATE.lastTitle = "OTTO — " + t.title;
   panelBody.innerHTML = t.html() + calcBar(key);
+  if (typeof t.init === "function") t.init();
   panel.scrollIntoView({behavior:"smooth", block:"start"});
 }
 function closeTool(){ panel.classList.add("hidden"); }
@@ -475,82 +476,295 @@ function runSmart(){
    AIR SYSTEMS
    ========================================================================== */
 
-/* ---------- Duct & Airflow (circular, rectangular, flat-oval) ---------- */
+/* ---------- Duct Sizer (Lindab-style live ductulator) ----------
+   Free-form 2-of-4 solving for circular ducts: type into any of
+   Flow / Diameter / Velocity / Pa-per-m and the other two solve live.
+   Rectangular & flat-oval: dims always input + one of {Q,V,R} drives.
+   Equivalent diameter, gauges, and material roughness toggle. */
+
+const DUCT_STATE = {
+  shape:   "circ",                 // circ | rect | oval
+  history: ["Q","D"],              // most-recently-edited keys (max 2 for circ; 1 of {Q,V,R} for rect/oval)
+  values:  {                       // display units (l/s for Q, mm for dims, m/s for V, Pa/m for R)
+    Q: 900, D: 630,
+    W: 600, H: 400,
+    A: 700, B: 400,
+    V: null, R: null
+  }
+};
+const EPS_MM = { galv: 0.15, alu: 0.05, plastic: 0.01, flex: 0.9 };
+
 function ductHTML(){
   return `
+  <div class="duct-shape-tabs" role="tablist">
+    <button type="button" class="ds-tab active" data-shape="circ" onclick="setDuctShape('circ')">⭕ Circular</button>
+    <button type="button" class="ds-tab" data-shape="rect" onclick="setDuctShape('rect')">▭ Rectangular</button>
+    <button type="button" class="ds-tab" data-shape="oval" onclick="setDuctShape('oval')">🥚 Flat-oval</button>
+  </div>
   <div class="field full">
-    <label>Duct shape</label>
-    <select id="ductShape" onchange="ductShapeUI()">
-      <option value="circ">Circular</option>
-      <option value="rect">Rectangular</option>
-      <option value="oval">Flat-oval</option>
+    <label>Material (sets roughness ε)</label>
+    <select id="ductMat" onchange="recomputeDuct()">
+      <option value="galv" selected>Galvanised steel — ε = 0.15 mm</option>
+      <option value="alu">Aluminium — ε = 0.05 mm</option>
+      <option value="plastic">Plastic / PE — ε = 0.01 mm</option>
+      <option value="flex">Flexible / spiral — ε = 0.9 mm</option>
     </select>
   </div>
-  <div id="ductDims"></div>
-  <div class="form-grid">
-    <div class="field"><label>Airflow</label><input id="ductQ" type="number" inputmode="decimal" placeholder="900"></div>
-    <div class="field"><label>Unit</label><select id="ductUnit">
-      <option value="ls">l/s</option><option value="m3h">m³/h</option><option value="cfm">CFM</option><option value="m3s">m³/s</option>
-    </select></div>
-  </div>
-  <div id="ductOut" class="result muted">Enter dimensions and airflow.</div>`;
+  <div class="solver-hint">Type any <strong>two</strong> values for circular, or <strong>both dimensions plus one</strong> of flow / velocity / Pa-per-m for rect &amp; oval. The others solve live.</div>
+  <div id="ductSolver"></div>
+  <div id="ductGauges"></div>
+  <div id="ductOut" class="result muted">Live solution will appear here.</div>`;
 }
-function ductShapeUI(){
-  const shape = v("ductShape");
-  const html = shape === "circ"
-    ? `<div class="field"><label>Diameter (mm)</label><input id="ductD" type="number" inputmode="decimal" placeholder="630"></div>`
-    : shape === "rect"
-    ? `<div class="form-grid">
-         <div class="field"><label>Width (mm)</label><input id="ductW" type="number" inputmode="decimal" placeholder="600"></div>
-         <div class="field"><label>Height (mm)</label><input id="ductH" type="number" inputmode="decimal" placeholder="400"></div>
-       </div>`
-    : `<div class="form-grid">
-         <div class="field"><label>Major axis (mm)</label><input id="ductA" type="number" inputmode="decimal" placeholder="700"></div>
-         <div class="field"><label>Minor axis (mm)</label><input id="ductB" type="number" inputmode="decimal" placeholder="400"></div>
-       </div>`;
-  $("ductDims").innerHTML = html;
-}
-function toM3s(val,u){
-  if(u==="ls")  return val/1000;
-  if(u==="m3h") return val/3600;
-  if(u==="cfm") return val*0.00047194745;
-  return val;
-}
-function calcDuct(){
-  const shape = v("ductShape");
-  let area = 0, dh = 0, dimText = "";
+
+function ductInit(){ setDuctShape(DUCT_STATE.shape || "circ"); }
+
+function setDuctShape(shape){
+  DUCT_STATE.shape = shape;
+  document.querySelectorAll(".ds-tab").forEach(t => t.classList.toggle("active", t.dataset.shape === shape));
   if (shape === "circ"){
-    const d = n("ductD")/1000;
-    area = Math.PI*Math.pow(d/2,2); dh = d;
-    dimText = `Ø ${n("ductD")} mm`;
-  } else if (shape === "rect"){
-    const w = n("ductW")/1000, h = n("ductH")/1000;
-    area = w*h; dh = (2*w*h)/(w+h || 1);
-    dimText = `${n("ductW")} × ${n("ductH")} mm`;
+    if (DUCT_STATE.history.length < 2 || DUCT_STATE.history.some(k => !["Q","D","V","R"].includes(k))){
+      DUCT_STATE.history = ["Q","D"];
+    }
   } else {
-    const a = n("ductA")/1000, b = n("ductB")/1000;
-    area = (Math.PI*b*b/4) + b*(a-b);
-    const peri = Math.PI*b + 2*(a-b);
-    dh = (4*area)/(peri || 1);
-    dimText = `${n("ductA")} × ${n("ductB")} mm flat-oval`;
+    DUCT_STATE.history = ["Q"];
   }
-  const q = n("ductQ"), u = v("ductUnit");
-  const qms = toM3s(q,u);
-  let html = `<strong>Area: ${fmt(area,4)} m²</strong> &nbsp;<small>(${dimText})</small><br>
-              Hydraulic Ø: ${fmt(dh*1000,0)} mm`;
-  if (qms > 0 && area > 0){
-    const vel = qms/area;
-    html += `<br><br><strong>Velocity: ${fmt(vel,2)} m/s</strong> ${velBadge(vel)}<br>
-             Airflow: ${fmt(qms*1000,0)} l/s • ${fmt(qms*3600,0)} m³/h • ${fmt(qms/0.00047194745,0)} CFM`;
+  renderDuctSolver();
+  recomputeDuct();
+}
+
+function renderDuctSolver(){
+  const s = DUCT_STATE.shape, v = DUCT_STATE.values;
+  const row = (key, label, unit, val, icon) => `
+    <div class="solver-row" id="row-duct${key}">
+      <div class="solver-icon">${icon}</div>
+      <div class="solver-label">${label}<small id="state-duct${key}"></small></div>
+      <input class="solver-input" id="duct${key}" type="number" inputmode="decimal" value="${val == null ? '' : val}" oninput="ductInput('${key}')">
+      <div class="solver-unit">${unit}</div>
+    </div>`;
+  let html = "";
+  if (s === "circ"){
+    html = row("Q","Airflow","l/s", v.Q, "💨")
+         + row("D","Diameter","mm", v.D, "Ø")
+         + row("V","Velocity","m/s", v.V, "→")
+         + row("R","Pressure","Pa/m", v.R, "📉");
+  } else if (s === "rect"){
+    html = row("W","Width","mm", v.W, "↔")
+         + row("H","Height","mm", v.H, "↕")
+         + row("Q","Airflow","l/s", v.Q, "💨")
+         + row("V","Velocity","m/s", v.V, "→")
+         + row("R","Pressure","Pa/m", v.R, "📉");
+  } else {
+    html = row("A","Major axis","mm", v.A, "↔")
+         + row("B","Minor axis","mm", v.B, "↕")
+         + row("Q","Airflow","l/s", v.Q, "💨")
+         + row("V","Velocity","m/s", v.V, "→")
+         + row("R","Pressure","Pa/m", v.R, "📉");
   }
-  html += assumptionFooter("ρ = 1.2 kg/m³ • velocity bands per CIBSE Guide B");
+  document.getElementById("ductSolver").innerHTML = `<div class="solver-grid">${html}</div>`;
+}
+
+function ductInput(key){
+  const el = document.getElementById("duct" + key);
+  const val = parseFloat(el.value);
+  DUCT_STATE.values[key] = isNaN(val) ? null : val;
+  if (DUCT_STATE.shape === "circ"){
+    DUCT_STATE.history = DUCT_STATE.history.filter(k => k !== key);
+    DUCT_STATE.history.push(key);
+    if (DUCT_STATE.history.length > 2) DUCT_STATE.history.shift();
+  } else if (["Q","V","R"].includes(key)){
+    DUCT_STATE.history = [key];
+  }
+  recomputeDuct();
+}
+
+function R_for(V, Dh, eps){
+  if (V <= 0 || Dh <= 0) return Infinity;
+  const Re = V * Dh / NU_AIR;
+  const f  = Re < 2300 ? 64/Re : colebrook(eps/Dh, Re);
+  return f * RHO_AIR * V * V / (2*Dh);
+}
+function bisect(fn, lo, hi, tol = 1e-5, maxIter = 80){
+  let flo = fn(lo), fhi = fn(hi);
+  if (!Number.isFinite(flo) || !Number.isFinite(fhi)) return null;
+  if (flo*fhi > 0) return null;
+  for (let i = 0; i < maxIter; i++){
+    const mid = (lo+hi)/2, fmid = fn(mid);
+    if (Math.abs(fmid) < tol) return mid;
+    if (flo*fmid < 0){ hi = mid; fhi = fmid; }
+    else            { lo = mid; flo = fmid; }
+  }
+  return (lo+hi)/2;
+}
+
+function solveCircular(eps_mm){
+  const valid = DUCT_STATE.history.filter(k => Number.isFinite(DUCT_STATE.values[k]));
+  if (valid.length < 2) return null;
+  const [k1, k2] = valid.slice(-2);
+  const si = {};
+  for (const k of [k1, k2]){
+    let val = DUCT_STATE.values[k];
+    if (k === "Q" || k === "D") val = val/1000;
+    si[k] = val;
+  }
+  const eps = eps_mm/1000;
+  let Q, D, V, R;
+  const has = (a,b) => (a in si) && (b in si);
+
+  if (has("Q","D"))      { Q=si.Q; D=si.D; V=Q/(Math.PI*D*D/4); R=R_for(V,D,eps); }
+  else if (has("Q","V")) { Q=si.Q; V=si.V; D=Math.sqrt(4*Q/(Math.PI*V)); R=R_for(V,D,eps); }
+  else if (has("D","V")) { D=si.D; V=si.V; Q=Math.PI*D*D/4*V; R=R_for(V,D,eps); }
+  else if (has("Q","R")) {
+    Q=si.Q; R=si.R;
+    D = bisect(d => R_for(Q/(Math.PI*d*d/4), d, eps) - R, 0.05, 3.0);
+    if (D == null) return null;
+    V = Q/(Math.PI*D*D/4);
+  }
+  else if (has("D","R")) {
+    D=si.D; R=si.R;
+    V = bisect(vel => R_for(vel, D, eps) - R, 0.05, 40);
+    if (V == null) return null;
+    Q = Math.PI*D*D/4 * V;
+  }
+  else if (has("V","R")) {
+    V=si.V; R=si.R;
+    D = bisect(d => R_for(V, d, eps) - R, 0.02, 3.0);
+    if (D == null) return null;
+    Q = Math.PI*D*D/4 * V;
+  }
+  else return null;
+
+  if ([Q,D,V,R].some(x => x == null || !Number.isFinite(x) || x <= 0)) return null;
+  const Re = V*D/NU_AIR;
+  const f  = Re < 2300 ? 64/Re : colebrook(eps/D, Re);
+  return {Q, D, V, R, A: Math.PI*D*D/4, Dh: D, De: D, Re, f, inputs: [k1, k2], shape: "circ"};
+}
+
+function solveRectOval(shape, eps_mm){
+  const v = DUCT_STATE.values;
+  const dim1 = (shape === "rect") ? v.W : v.A;
+  const dim2 = (shape === "rect") ? v.H : v.B;
+  if (!Number.isFinite(dim1) || !Number.isFinite(dim2) || dim1 <= 0 || dim2 <= 0) return null;
+  const a = dim1/1000, b = dim2/1000;
+  const Aft  = (shape === "rect") ? a*b : (Math.PI*b*b/4) + b*Math.max(0,(a-b));
+  const peri = (shape === "rect") ? 2*(a+b) : Math.PI*b + 2*Math.max(0,(a-b));
+  const Dh   = 4*Aft / peri;
+  const De   = (shape === "rect")
+             ? 1.30 * Math.pow(a*b, 0.625) / Math.pow(a+b, 0.25)
+             : Dh;
+  const eps  = eps_mm/1000;
+  const driver = DUCT_STATE.history.filter(k => ["Q","V","R"].includes(k) && Number.isFinite(v[k])).slice(-1)[0];
+  if (!driver) return null;
+  let Q, V, R;
+  if (driver === "Q"){ Q = v.Q/1000; V = Q/Aft; R = R_for(V, De, eps); }
+  else if (driver === "V"){ V = v.V; Q = V*Aft; R = R_for(V, De, eps); }
+  else { R = v.R; V = bisect(vel => R_for(vel, De, eps) - R, 0.05, 40); if (V == null) return null; Q = V*Aft; }
+  if ([Q,V,R].some(x => !Number.isFinite(x) || x <= 0)) return null;
+  const Re = V*De/NU_AIR;
+  const f  = Re < 2300 ? 64/Re : colebrook(eps/De, Re);
+  return {Q, V, R, A: Aft, Dh, De, Re, f, inputs: ["dim", driver], shape, dim1, dim2};
+}
+
+function recomputeDuct(){
+  const matSel = document.getElementById("ductMat");
+  if (!matSel) return;
+  const eps = EPS_MM[matSel.value] || 0.15;
+  const s   = DUCT_STATE.shape;
+  const r   = (s === "circ") ? solveCircular(eps) : solveRectOval(s, eps);
+  if (!r){
+    document.getElementById("ductOut").innerHTML = `<span class="muted">Need ${s === "circ" ? "any two values" : "both dimensions plus one of flow / velocity / Pa-per-m"} to solve.</span>`;
+    document.getElementById("ductGauges").innerHTML = "";
+    return;
+  }
+  applyDuctResult(r);
+  renderDuctGauges(r);
+  renderDuctSummary(r);
+}
+
+function applyDuctResult(r){
+  const s = DUCT_STATE.shape;
+  const inputs = (s === "circ")
+    ? DUCT_STATE.history.slice(-2)
+    : (s === "rect" ? ["W","H"] : ["A","B"]).concat(DUCT_STATE.history.filter(k => ["Q","V","R"].includes(k)).slice(-1));
+  const setField = (key, displayVal, decimals) => {
+    const el  = document.getElementById("duct" + key);
+    const row = document.getElementById("row-duct" + key);
+    const tag = document.getElementById("state-duct" + key);
+    if (!el) return;
+    const isInput = inputs.includes(key);
+    if (isInput){
+      el.classList.remove("computed");
+      row?.classList.remove("computed");
+      if (tag) tag.innerHTML = "<span class='input-tag'>input</span>";
+    } else {
+      el.classList.add("computed");
+      row?.classList.add("computed");
+      if (tag) tag.innerHTML = "<span class='auto-tag'>auto</span>";
+      if (Number.isFinite(displayVal)){
+        el.value = fmt(displayVal, decimals);
+        DUCT_STATE.values[key] = displayVal;
+      }
+    }
+  };
+  setField("Q", r.Q*1000, 0);
+  setField("V", r.V, 2);
+  setField("R", r.R, 2);
+  if (s === "circ") setField("D", r.D*1000, 0);
+}
+
+function renderDuctGauges(r){
+  const html = `
+    <div class="gauge-block">
+      <div class="gauge-label">Velocity <strong>${fmt(r.V,2)} m/s</strong> ${velBadge(r.V)}</div>
+      <div class="gauge-track">
+        <div class="gauge-band" style="left:0;width:13.3%;background:#dbeafe"></div>
+        <div class="gauge-band" style="left:13.3%;width:40%;background:#dcfce7"></div>
+        <div class="gauge-band" style="left:53.3%;width:46.7%;background:#fef3c7"></div>
+        <div class="gauge-marker" style="left:${Math.min(100, Math.max(0, r.V/15*100))}%"></div>
+      </div>
+      <div class="gauge-scale"><span>0</span><span>2</span><span>8</span><span>15 m/s</span></div>
+    </div>
+    <div class="gauge-block">
+      <div class="gauge-label">Pressure drop <strong>${fmt(r.R,2)} Pa/m</strong> ${rBadge(r.R)}</div>
+      <div class="gauge-track">
+        <div class="gauge-band" style="left:0;width:33.3%;background:#dcfce7"></div>
+        <div class="gauge-band" style="left:33.3%;width:50%;background:#fef3c7"></div>
+        <div class="gauge-band" style="left:83.3%;width:16.7%;background:#fee2e2"></div>
+        <div class="gauge-marker" style="left:${Math.min(100, Math.max(0, r.R/3*100))}%"></div>
+      </div>
+      <div class="gauge-scale"><span>0</span><span>1</span><span>2.5</span><span>3 Pa/m</span></div>
+    </div>`;
+  document.getElementById("ductGauges").innerHTML = html;
+}
+
+function renderDuctSummary(r){
+  const s = DUCT_STATE.shape;
+  const shapeLabel = s === "circ" ? "Circular" : s === "rect" ? "Rectangular" : "Flat-oval";
+  const dimText = s === "circ" ? `Ø ${fmt(r.D*1000,0)} mm`
+                : s === "rect" ? `${fmt(r.dim1,0)} × ${fmt(r.dim2,0)} mm`
+                :                `${fmt(r.dim1,0)} × ${fmt(r.dim2,0)} mm flat-oval`;
+  const eqDia = s !== "circ" ? `<br>Equivalent Ø (friction-equivalent): <strong>${fmt(r.De*1000,0)} mm</strong>` : "";
+  const flowAlt = `${fmt(r.Q*1000,0)} l/s • ${fmt(r.Q*3600,0)} m³/h • ${fmt(r.Q/0.00047194745,0)} CFM`;
+  const html = `
+    <strong>Live solution</strong> <span class="badge badge-info">${shapeLabel}</span> &nbsp;<small>${dimText}</small><br>
+    Area: <strong>${fmt(r.A,4)} m²</strong> &nbsp;(${fmt(r.A*10000,0)} cm²)<br>
+    Hydraulic Ø: ${fmt(r.Dh*1000,0)} mm${eqDia}<br>
+    Reynolds: ${fmt(r.Re,0)} • friction factor f: ${fmt(r.f,4)}<br><br>
+    Airflow: ${flowAlt}<br>
+    Over 10 m run: <strong>${fmt(r.R*10,0)} Pa</strong> &nbsp; • &nbsp; Over 50 m: ${fmt(r.R*50,0)} Pa
+    ${assumptionFooter("ρ = 1.2 kg/m³ • ν = 1.5×10⁻⁵ m²/s • Colebrook-White • bands per CIBSE Guide B")}`;
   setResult("ductOut", html);
 }
+
 function velBadge(vel){
   if (vel < 2)  return `<span class="badge badge-info">Low velocity</span>`;
   if (vel <= 8) return `<span class="badge badge-good">Within typical commercial range</span>`;
   if (vel <= 15)return `<span class="badge badge-warn">High — check noise / pressure drop</span>`;
   return `<span class="badge badge-bad">Excessive — noise & energy risk</span>`;
+}
+function rBadge(r){
+  if (r < 1)    return `<span class="badge badge-good">Economical</span>`;
+  if (r < 2.5)  return `<span class="badge badge-warn">Acceptable</span>`;
+  return `<span class="badge badge-bad">High loss — uprate size</span>`;
 }
 
 /* ---------- Duct Friction (Darcy-Weisbach + Colebrook) ---------- */
