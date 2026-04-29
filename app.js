@@ -790,13 +790,16 @@ function rBadge(r){
 /* ---------- Duct Friction (Darcy-Weisbach + Colebrook) ---------- */
 function frictionHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('duct_friction_explained')">💡 What do these numbers mean?</button>
+  </div>
   <div class="form-grid">
     <div class="field"><label>Hydraulic diameter (mm)</label><input id="frD" type="number" inputmode="decimal" placeholder="400"></div>
     <div class="field"><label>Airflow (l/s)</label><input id="frQ" type="number" inputmode="decimal" placeholder="500"></div>
     <div class="field"><label>Material roughness ε (mm)</label><input id="frEps" type="number" inputmode="decimal" value="0.15"></div>
     <div class="field"><label>Length (m, optional)</label><input id="frL" type="number" inputmode="decimal" placeholder="20"></div>
   </div>
-  <div id="frOut" class="result muted">Default ε = 0.15 mm (galvanised steel).</div>`;
+  <div id="frOut" class="result muted">Default ε = 0.15 mm (galvanised steel). Plain-English interpretation appears below.</div>`;
 }
 function colebrook(epsD, Re){
   // Solve 1/√f = -2 log10( ε/3.7D + 2.51 / (Re √f) )  iteratively
@@ -814,21 +817,39 @@ function calcFriction(){
   const dh = dhMm/1000, q = qLs/1000;
   const area = Math.PI*Math.pow(dh/2,2);
   const vel = q/area;
-  const Re  = vel*dh/NU_AIR;
-  let html = "";
   if (dh <= 0 || vel <= 0){
-    html = `<span class="bad">Enter diameter and airflow.</span>`;
-  } else {
-    let f, regime;
-    if (Re < 2300){ f = 64/Re; regime = "laminar"; }
-    else { f = colebrook(epsMm/(dhMm), Re); regime = "turbulent"; }
-    const dpPerM = f * (RHO_AIR*vel*vel)/(2*dh);   // Pa/m
-    html = `<strong>${fmt(dpPerM,2)} Pa/m</strong>
-            <span class="badge ${dpPerM<1?'badge-good':dpPerM<2.5?'badge-warn':'badge-bad'}">${dpPerM<1?'Economical':dpPerM<2.5?'Acceptable':'High loss'}</span>
-            <br>Velocity: ${fmt(vel,2)} m/s ${velBadge(vel)}
-            <br>Reynolds: ${fmt(Re,0)} (${regime})
-            <br>Friction factor f: ${fmt(f,4)}`;
-    if (L > 0) html += `<br><br><strong>Total over ${L} m: ${fmt(dpPerM*L,1)} Pa</strong>`;
+    setResult("frOut", `<span class="bad">Enter diameter and airflow.</span>` + assumptionFooter("ε = 0.15 mm galvanised steel default"));
+    return;
+  }
+  const Re  = vel*dh/NU_AIR;
+  let f, regime;
+  if (Re < 2300){ f = 64/Re; regime = "laminar"; }
+  else { f = colebrook(epsMm/(dhMm), Re); regime = "turbulent"; }
+  const dpPerM = f * (RHO_AIR*vel*vel)/(2*dh);
+
+  let status, statusText, advice;
+  if (dpPerM < 0.5)      { status = "info";  statusText = "Very low — duct may be over-sized"; advice = "Generous sizing — fan-friendly but throw from terminals may be weak."; }
+  else if (dpPerM < 1.0) { status = "good";  statusText = "Economical — design sweet spot"; advice = "Sits in the 0.8–1.0 Pa/m design band — good balance between fan power and duct cost."; }
+  else if (dpPerM < 2.5) { status = "warn";  statusText = "Acceptable — short runs"; advice = "Fine for short runs or plant-room mains; on long runs the fan power adds up quickly."; }
+  else if (dpPerM < 5.0) { status = "bad";   statusText = "High loss — uprate size"; advice = "Step duct size up. Pa/m scales with V² so going from a 400 mm to 450 mm duct typically halves friction."; }
+  else                   { status = "bad";   statusText = "Severe — check inputs or uprate two sizes"; advice = "Either velocity is way too high for this duct, or the inputs need a sense check."; }
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+
+  let html = `
+    <h4>Headline</h4>
+    <strong>${fmtSmart(dpPerM)} Pa/m</strong> friction loss &nbsp;<span class="badge ${badgeMap[status]}">${statusText}</span><br>
+    <small class="muted">${advice}</small><br>
+    <small class="muted">Design band: <strong>0.8–1.0 Pa/m</strong> typical • up to 2.5 Pa/m acceptable on short runs.</small><br><br>
+
+    <h4>Velocity</h4>
+    ${fmtSmart(vel)} m/s &nbsp;${velBadge(vel)}<br><br>
+
+    <h4>Detail</h4>
+    Hydraulic Ø ${fmtSmart(dhMm)} mm • flow ${fmtSmart(qLs)} l/s • ε ${epsMm} mm<br>
+    Reynolds ${fmtSmart(Re)} (${regime}) • friction factor f = ${fmtSmart(f)}`;
+  if (L > 0){
+    html += `<br><br><h4>Over ${fmtSmart(L)} m run</h4>
+             Total: <strong>${fmtSmart(dpPerM*L)} Pa</strong> the fan must overcome on this run alone (excluding fittings — add 30–50%).`;
   }
   html += assumptionFooter(`ε = ${epsMm} mm • ρ = 1.2 kg/m³ • ν = 1.5×10⁻⁵ m²/s • Colebrook-White iterative`);
   setResult("frOut", html);
@@ -837,37 +858,58 @@ function calcFriction(){
 /* ---------- Grille / Free Area ---------- */
 function grilleHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('airflow_vs_resistance')">💡 Airflow vs resistance</button>
+  </div>
   <div class="form-grid">
     <div class="field"><label>Width (mm)</label><input id="grW" type="number" inputmode="decimal" placeholder="600"></div>
     <div class="field"><label>Height (mm)</label><input id="grH" type="number" inputmode="decimal" placeholder="300"></div>
     <div class="field"><label>Free area %</label><input id="grFree" type="number" inputmode="decimal" placeholder="60"></div>
     <div class="field"><label>Airflow (l/s)</label><input id="grQ" type="number" inputmode="decimal" placeholder="150"></div>
   </div>
-  <div id="grOut" class="result muted">Used for grille and louvre face / free-area checks.</div>`;
+  <div id="grOut" class="result muted">Grille / louvre face & free-area velocity check. Free-area velocity (not face velocity) drives the noise rating.</div>`;
 }
 function calcGrille(){
   const gross = (n("grW")/1000)*(n("grH")/1000);
   const free  = gross*(n("grFree")/100);
   const q     = n("grQ")/1000;
+  const qLs   = n("grQ");
   const vGross = gross > 0 ? q/gross : 0;
   const vFree  = free  > 0 ? q/free  : 0;
-  let badge = "";
-  if (vFree > 0){
-    if      (vFree < 2)  badge = `<span class="badge badge-good">Quiet</span>`;
-    else if (vFree < 3)  badge = `<span class="badge badge-warn">Borderline noise</span>`;
-    else                 badge = `<span class="badge badge-bad">Noisy — reconsider grille</span>`;
+  if (gross <= 0 || free <= 0){
+    setResult("grOut", `<span class="bad">Enter width, height and free-area %.</span>`);
+    return;
   }
-  let html = `<strong>Gross area: ${fmt(gross,3)} m²</strong><br>
-              Free area: ${fmt(free,3)} m²<br>
-              Face velocity: ${fmt(vGross,2)} m/s<br>
-              Free-area velocity: <strong>${fmt(vFree,2)} m/s</strong> ${badge}`;
-  html += assumptionFooter("Free-area velocity drives noise rating; CIBSE comfort < 2.5 m/s typical.");
+  let status, statusText, advice;
+  if (vFree === 0)         { status = "info"; statusText = "Add airflow to assess"; advice = "Enter expected airflow to see velocity-based noise band."; }
+  else if (vFree < 1.5)    { status = "good"; statusText = "Quiet — well sized"; advice = "Free-area velocity below 1.5 m/s — comfortable for offices and meeting rooms."; }
+  else if (vFree < 2.5)    { status = "good"; statusText = "Acceptable comfort"; advice = "Within the CIBSE comfort guidance for occupied spaces (< 2.5 m/s)."; }
+  else if (vFree < 3.5)    { status = "warn"; statusText = "Borderline — noise risk"; advice = "Approaching the noisy band. Acceptable in plant rooms or transient areas; reconsider for quiet offices."; }
+  else                     { status = "bad";  statusText = "Noisy — uprate grille"; advice = "Likely audible whistle/roar. Specify a larger grille or one with higher free-area %."; }
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+
+  let html = `
+    <h4>Headline</h4>
+    Free-area velocity <strong>${fmtSmart(vFree)} m/s</strong> &nbsp;<span class="badge ${badgeMap[status]}">${statusText}</span><br>
+    <small class="muted">${advice}</small><br>
+    <small class="muted">Comfort guidance: <strong>&lt; 2.5 m/s</strong> for occupied spaces • &gt; 3.5 m/s noisy.</small><br><br>
+
+    <h4>Detail</h4>
+    Face area (gross): ${fmtSmart(gross*10000)} cm² (${fmtSmart(gross)} m²)<br>
+    Free area: ${fmtSmart(free*10000)} cm² (${fmtSmart(free)} m²)<br>
+    Face velocity: ${fmtSmart(vGross)} m/s • Airflow: ${fmtSmart(qLs)} l/s`;
+  html += assumptionFooter("Free-area velocity drives noise rating; face velocity is the average across the whole grille face including blades/blocking.");
   setResult("grOut", html);
 }
 
 /* ---------- Psychrometrics ---------- */
 function psychHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('psychrometrics_basics')">💡 Dry / wet / dew explained</button>
+    <button type="button" class="explain-link" onclick="openExplanation('sensible_vs_latent')">💡 Sensible vs latent</button>
+    <button type="button" class="explain-link" onclick="openExplanation('duct_condensation')">💡 Why ducts sweat</button>
+  </div>
   <div class="form-grid">
     <div class="field"><label>Dry-bulb T (°C)</label><input id="psT" type="number" inputmode="decimal" placeholder="22"></div>
     <div class="field"><label>Relative humidity %</label><input id="psRH" type="number" inputmode="decimal" placeholder="50"></div>
@@ -887,7 +929,7 @@ function psychHTML(){
       <div class="field"><label>Total kW</label><input id="psTot" type="number" inputmode="decimal" placeholder="10"></div>
     </div>
   </fieldset>
-  <div id="psOut" class="result muted">Air state, dew point, mixed-air temperature, sensible heat ratio.</div>`;
+  <div id="psOut" class="result muted">Air state, dew point, mixed-air temperature, sensible heat ratio. Plain-English interpretation appears below.</div>`;
 }
 function pSat(T){ return 610.94 * Math.exp(17.625*T/(T+243.04)); } // Pa
 function dewPoint(Pw){
@@ -896,30 +938,55 @@ function dewPoint(Pw){
 }
 function calcPsych(){
   const T = n("psT"), RH = n("psRH");
+  if (T === 0 && RH === 0){ setResult("psOut", `<span class="bad">Enter dry-bulb temperature and RH to begin.</span>`); return; }
   const ps = pSat(T), pw = (RH/100)*ps;
-  const W  = 0.622*pw/(P_ATM-pw);                       // kg/kg dry air
-  const h  = 1.006*T + W*(2501 + 1.86*T);                // kJ/kg
+  const W  = 0.622*pw/(P_ATM-pw);
+  const h  = 1.006*T + W*(2501 + 1.86*T);
   const Td = dewPoint(pw);
-  let html = `<strong>${fmt(T,1)} °C, ${fmt(RH,0)}% RH</strong><br>
-              Humidity ratio W = <strong>${fmt(W*1000,2)} g/kg</strong><br>
-              Enthalpy h = <strong>${fmt(h,2)} kJ/kg</strong><br>
-              Dew point = <strong>${fmt(Td,1)} °C</strong><br>
-              Sat. vapour p = ${fmt(ps,0)} Pa • partial p = ${fmt(pw,0)} Pa`;
+
+  // Comfort interpretation
+  let comfStatus, comfText, comfAdvice;
+  if (RH < 30)        { comfStatus = "warn"; comfText = "Dry";        comfAdvice = "Low RH — eyes/skin/wood may dry out. Acceptable in heating season."; }
+  else if (RH <= 60)  { comfStatus = "good"; comfText = "Comfortable"; comfAdvice = "Within 30–60% RH comfort band — typical office target."; }
+  else if (RH <= 70)  { comfStatus = "warn"; comfText = "Humid — borderline"; comfAdvice = "Approaching the upper limit. Mould risk on cool surfaces increases above 60%."; }
+  else                { comfStatus = "bad";  comfText = "Very humid"; comfAdvice = "Above 70% RH — sweaty, sticky, mould-friendly. Investigate moisture source or boost ventilation/dehumidify."; }
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+
+  let html = `
+    <h4>Headline</h4>
+    <strong>${fmtSmart(T)} °C dry-bulb, ${fmtSmart(RH)}% RH</strong> &nbsp;<span class="badge ${badgeMap[comfStatus]}">${comfText}</span><br>
+    <small class="muted">${comfAdvice}</small><br>
+    <small class="muted">Office comfort: <strong>21–23 °C / 40–60% RH</strong>.</small><br><br>
+
+    <h4>Air state</h4>
+    Humidity ratio W = <strong>${fmtSmart(W*1000)} g/kg</strong> dry air<br>
+    Enthalpy h = <strong>${fmtSmart(h)} kJ/kg</strong> dry air<br>
+    Dew point = <strong>${fmtSmart(Td)} °C</strong><br>
+    <small class="muted">Surfaces below ${fmtSmart(Td)} °C will sweat in this air.</small>`;
+
   const oaT = n("psOaT"), raT = n("psRaT"), oaPct = n("psOaPct");
   if (oaPct > 0){
-    const f = oaPct/100;
-    const Tmix = f*oaT + (1-f)*raT;
-    html += `<br><br><h4>Mixed Air</h4>T<sub>mix</sub> = <strong>${fmt(Tmix,1)} °C</strong> (${oaPct}% OA)`;
+    const fr = oaPct/100;
+    const Tmix = fr*oaT + (1-fr)*raT;
+    html += `<br><br><h4>Mixed air (${fmtSmart(oaPct)}% outside, ${fmtSmart(100-oaPct)}% return)</h4>
+             Mixed dry-bulb T<sub>mix</sub> = <strong>${fmtSmart(Tmix)} °C</strong>`;
   }
   const sen = n("psSen"), tot = n("psTot");
   if (tot > 0){
     const shr = sen/tot;
-    let badge = shr >= 0.7 ? `<span class="badge badge-good">Sensible-led</span>`
-              : shr >= 0.5 ? `<span class="badge badge-warn">Mixed load</span>`
-              :              `<span class="badge badge-bad">Latent-led — check coil</span>`;
-    html += `<br><br><h4>Sensible Heat Ratio</h4>SHR = <strong>${fmt(shr,2)}</strong> ${badge}`;
+    let shrStatus, shrText, shrAdvice;
+    if (shr >= 0.85)      { shrStatus = "info"; shrText = "Almost all sensible"; shrAdvice = "Coil mostly cooling air, barely removing moisture."; }
+    else if (shr >= 0.70) { shrStatus = "good"; shrText = "Sensible-led"; shrAdvice = "Typical office split — cooling temperature with modest dehumidification."; }
+    else if (shr >= 0.50) { shrStatus = "warn"; shrText = "Mixed load"; shrAdvice = "Significant latent component. Confirm coil selected for this SHR."; }
+    else                  { shrStatus = "bad";  shrText = "Latent-led"; shrAdvice = "More than half the load is moisture. Coil must be deep/cold enough to drag wet-bulb down — sensible-only selection will fail."; }
+    html += `<br><br><h4>Sensible Heat Ratio</h4>
+             SHR = <strong>${fmtSmart(shr)}</strong> &nbsp;<span class="badge ${badgeMap[shrStatus]}">${shrText}</span><br>
+             <small class="muted">${shrAdvice}</small>`;
   }
-  if (Td > T - 2 && RH > 0) html += `<br><br><span class="badge badge-warn">Surface condensation risk — within 2 K of dew point</span>`;
+  if (Td > T - 2 && RH > 0){
+    html += `<br><br><span class="badge badge-warn">Surface condensation risk — within 2 K of dew point</span>
+             <small class="muted"> Any surface within 2 K of the dew point (${fmtSmart(Td)} °C) will start to sweat.</small>`;
+  }
   html += assumptionFooter("Magnus equation • P = 101.325 kPa • h, W in dry-air basis");
   setResult("psOut", html);
 }
@@ -936,28 +1003,47 @@ function fluidSelectHTML(id){
 
 function waterHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('water_flow_kw_dt')">💡 Why ΔT matters</button>
+  </div>
   <div class="form-grid">
     <div class="field full"><label>Fluid</label>${fluidSelectHTML("watFluid")}</div>
     <div class="field"><label>Duty (kW)</label><input id="watKw" type="number" inputmode="decimal" placeholder="10"></div>
     <div class="field"><label>ΔT (°C)</label><input id="watDt" type="number" inputmode="decimal" placeholder="5"></div>
   </div>
-  <div id="watOut" class="result muted">Q = kW ÷ (cp × ρ × ΔT). Glycol mixes reduce capacity vs water.</div>`;
+  <div id="watOut" class="result muted">Flow needed to carry the duty at the chosen ΔT. Bigger ΔT → smaller pump.</div>`;
 }
 function calcWater(){
   const f = FLUIDS[v("watFluid")] || FLUIDS.water;
   const kw = n("watKw"), dt = n("watDt");
-  if (kw <= 0 || dt <= 0){ setResult("watOut", `<span class="bad">Enter duty and ΔT.</span>`); return; }
-  // Q (m³/s) = kW (kJ/s) / (cp × ρ × ΔT)
+  if (kw <= 0 || dt <= 0){ setResult("watOut", `<span class="bad">Enter duty (kW) and ΔT (°C).</span>`); return; }
   const qm3s = kw / (f.cp * f.rho * dt);
-  const ls   = qm3s*1000, lpm = ls*60, m3h = qm3s*3600;
-  const penalty = ((4.186*1000)/(f.cp*f.rho) - 1)*100;
-  let html = `<strong>${fmt(ls,3)} l/s</strong><br>
-              ${fmt(lpm,1)} l/min • ${fmt(m3h,2)} m³/h<br>
-              Fluid: ${f.name} • cp = ${f.cp} kJ/kg·K • ρ = ${f.rho} kg/m³`;
-  if (Math.abs(penalty) > 0.5){
-    html += `<br><span class="badge badge-warn">+${fmt(penalty,1)}% flow vs pure water for same duty</span>`;
+  const ls = qm3s*1000, lpm = ls*60, m3h = qm3s*3600;
+  const penalty = ((CP_W*RHO_W)/(f.cp*f.rho) - 1)*100;
+  const isGlycol = v("watFluid") !== "water";
+
+  // ΔT band interpretation (chilled water context primarily — but works for LTHW too with different bands)
+  let dtStatus, dtText, dtAdvice;
+  if (dt < 4)        { dtStatus = "warn"; dtText = "Small ΔT — high flow"; dtAdvice = "Pump will work hard. Bigger ΔT (6–10 K chilled, 15–20 K LTHW) cuts pump power dramatically."; }
+  else if (dt <= 10) { dtStatus = "good"; dtText = "Typical chilled-water ΔT"; dtAdvice = "Sensible chilled-water sizing. For LTHW, target 15–20 K to halve flow again."; }
+  else if (dt <= 20) { dtStatus = "good"; dtText = "Modern LTHW range"; dtAdvice = "Modern condensing-boiler / heat-pump territory — low flow, low pump energy, big savings."; }
+  else               { dtStatus = "info"; dtText = "Very large ΔT"; dtAdvice = "Unusual — confirm coil/emitter can deliver this without surface temperature dropping below dew point."; }
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+
+  let html = `
+    <h4>Headline</h4>
+    Flow needed: <strong>${fmtSmart(ls)} l/s</strong> &nbsp;<span class="badge ${badgeMap[dtStatus]}">${dtText}</span><br>
+    <small class="muted">${dtAdvice}</small><br>
+    <small class="muted">Also: <strong>${fmtSmart(lpm)} l/min</strong> • <strong>${fmtSmart(m3h)} m³/h</strong></small><br><br>
+
+    <h4>Detail</h4>
+    Duty: <strong>${fmtSmart(kw)} kW</strong> at ΔT <strong>${fmtSmart(dt)} K</strong><br>
+    Fluid: ${f.name} • cp = ${f.cp} kJ/kg·K • ρ = ${f.rho} kg/m³`;
+  if (isGlycol && Math.abs(penalty) > 0.5){
+    html += `<br><span class="badge badge-warn">+${fmtSmart(penalty)}% more flow vs pure water</span>
+             <small class="muted"> Glycol's lower specific heat and higher density mean you must pump more litres for the same kW. Pump head also rises ~10–25% from increased viscosity.</small>`;
   }
-  html += assumptionFooter("Properties at ~30 °C nominal • increase pump head allowance for glycol viscosity.");
+  html += assumptionFooter("Q = kW ÷ (cp × ρ × ΔT). Properties at ~30 °C nominal. Increase pump head allowance ~10–25% for glycol viscosity.");
   setResult("watOut", html);
 }
 
@@ -1060,10 +1146,9 @@ function expansionHTML(){
       <div class="field"><label>Efficiency (%)</label><input id="pmpEff" type="number" inputmode="decimal" value="65"></div>
     </div>
   </fieldset>
-  <div id="exOut" class="result muted">Vessel uses Boyle's Law; pump kW = ρgQH ÷ η.</div>`;
+  <div id="exOut" class="result muted">Vessel sizing (Boyle's Law) and pump shaft kW from flow × head ÷ efficiency.</div>`;
 }
 function waterExpansion(t1, t2){
-  // Specific volume of water at T (°C) — approximation
   const sv = T => 1/(1000 - 0.005*(T-4)*(T-4));
   return (sv(t2) - sv(t1)) / sv(t1);
 }
@@ -1075,20 +1160,32 @@ function calcExpansion(){
     const expansion = V * eps;
     const ratio = (p1+1)/(p2+1);
     const Vvessel = expansion / (1 - ratio);
+    const Vrec = Vvessel * 1.20;  // 20% safety uplift
     html += `<h4>Expansion Vessel</h4>
-             Water expansion: <strong>${fmt(expansion,2)} L</strong> (${fmt(eps*100,2)}%)<br>
-             Min vessel size: <strong>${fmt(Vvessel,1)} L</strong> (pre-charge ${p1} barg → max ${p2} barg)`;
+             Water expansion when heated: <strong>${fmtSmart(expansion)} L</strong> (${fmtSmart(eps*100)}% of system volume)<br>
+             Minimum vessel size: <strong>${fmtSmart(Vvessel)} L</strong>
+             <small class="muted">(pre-charge ${fmtSmart(p1)} barg → max ${fmtSmart(p2)} barg before relief)</small><br>
+             <span class="badge badge-info">Recommended (with 20% uplift): <strong>${fmtSmart(Vrec)} L</strong></span><br>
+             <small class="muted">Always specify the next standard size up. Undersized vessels cause PRV discharge cycles and air ingress on cool-down.</small>`;
   }
   const Q = n("pmpQ")/1000, H = n("pmpH"), eff = n("pmpEff")/100;
   if (Q > 0 && H > 0 && eff > 0){
     const kwHyd = RHO_W*G*Q*H/1000;
     const kwShaft = kwHyd/eff;
+    let pumpStatus, pumpText, pumpAdvice;
+    if (eff < 0.50)       { pumpStatus = "bad";  pumpText = "Low efficiency"; pumpAdvice = "Consider a more efficient pump or VSD — running cost adds up over years."; }
+    else if (eff < 0.65)  { pumpStatus = "warn"; pumpText = "Modest efficiency"; pumpAdvice = "Typical of older fixed-speed pumps. EC/VSD pumps achieve 70–85% on the right duty point."; }
+    else if (eff < 0.80)  { pumpStatus = "good"; pumpText = "Good efficiency"; pumpAdvice = "Sensible operating point for an inline circulator."; }
+    else                  { pumpStatus = "good"; pumpText = "Excellent efficiency"; pumpAdvice = "Operating near peak efficiency — typical of well-selected EC/VSD pumps."; }
+    const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
     html += (html?"<br><br>":"") + `<h4>Pump Duty</h4>
-            Hydraulic power: <strong>${fmt(kwHyd,2)} kW</strong><br>
-            Shaft power @ ${(eff*100)|0}% η: <strong>${fmt(kwShaft,2)} kW</strong>`;
+            Hydraulic power (water leaves the pump): <strong>${fmtSmart(kwHyd)} kW</strong><br>
+            Shaft power needed (motor input): <strong>${fmtSmart(kwShaft)} kW</strong> &nbsp;<span class="badge ${badgeMap[pumpStatus]}">${pumpText}</span><br>
+            <small class="muted">${pumpAdvice}</small><br>
+            <small class="muted">Allow ~15–25% more on the motor selection for safety factor & off-design operation.</small>`;
   }
-  if (!html) html = `<span class="bad">Fill in either vessel or pump section.</span>`;
-  html += assumptionFooter("Vessel sizing per BS EN 12828 simplified; uplift 10–25% in practice.");
+  if (!html) html = `<span class="bad">Fill in either the vessel section or the pump section to see results.</span>`;
+  html += assumptionFooter("Vessel sizing per BS EN 12828 simplified (Boyle's Law on the gas side). Pump kW = ρ × g × Q × H ÷ η.");
   setResult("exOut", html);
 }
 
@@ -1126,6 +1223,10 @@ function refSelectHTML(id){
 
 function refcycleHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('superheat_subcool_explained')">💡 What SH/SC tell you</button>
+    <button type="button" class="explain-link" onclick="openExplanation('fgas_regulations_explained')">💡 F-Gas rules</button>
+  </div>
   <div class="field full"><label>Refrigerant</label>${refSelectHTML("rcRef")}</div>
   <fieldset>
     <legend>Suction (Superheat)</legend>
@@ -1141,70 +1242,100 @@ function refcycleHTML(){
       <div class="field"><label>Liquid line T (°C)</label><input id="rcLiqT" type="number" inputmode="decimal" placeholder="35"></div>
     </div>
   </fieldset>
-  <div id="rcOut" class="result muted">Pressures are gauge; tool adds 1 bar for absolute lookup.</div>`;
+  <div id="rcOut" class="result muted">Enter pressures (gauge — OTTO adds 1 bar for absolute) and line temperatures. Plain-English diagnosis appears below.</div>`;
 }
 function calcRefCycle(){
   const ref = v("rcRef");
   let html = "";
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
   const sucP = n("rcSucP"), sucT = n("rcSucT");
   if (sucP > 0 || sucT !== 0){
     const tSat = pToT(ref, sucP+1);
-    const sh   = sucT - tSat;
-    const tgt  = ref === "R290" ? "5–10 K" : "5–8 K";
-    const badge = sh < 3 ? `<span class="badge badge-bad">Low — flood-back risk</span>`
-                : sh > 12 ? `<span class="badge badge-bad">High — undercharge / TXV starving</span>`
-                : sh > 8  ? `<span class="badge badge-warn">High end of range</span>`
-                :           `<span class="badge badge-good">Within typical band</span>`;
-    html += `<h4>Superheat</h4>T<sub>sat</sub> @ ${sucP} barg = ${fmt(tSat,1)} °C<br>
-             Superheat = <strong>${fmt(sh,1)} K</strong> ${badge}<br>
-             <small>Target ${tgt} for typical evaporator</small>`;
+    const sh = sucT - tSat;
+    const tgt = ref === "R290" ? "5–10 K" : "5–8 K";
+    let status, statusText, advice;
+    if (sh < 3)        { status = "bad";  statusText = "Low — flood-back risk"; advice = "Liquid refrigerant may be reaching the compressor — serious damage risk. Check TXV setting, evaporator load, expansion valve sensor strap, refrigerant charge."; }
+    else if (sh > 12)  { status = "bad";  statusText = "High — undercharge / TXV starving"; advice = "Evaporator is short of refrigerant. Check liquid sight glass for flash bubbles, refrigerant level, filter dryer, TXV operation."; }
+    else if (sh > 8)   { status = "warn"; statusText = "High end of normal"; advice = "Slightly above target — system is running lean. Sense-check charge and TXV adjustment if performance is suffering."; }
+    else               { status = "good"; statusText = "Within typical band"; advice = "Healthy suction superheat — TXV and charge are well-matched to current load."; }
+    html += `<h4>Superheat (suction side)</h4>
+             T<sub>sat</sub> @ ${fmtSmart(sucP)} barg = <strong>${fmtSmart(tSat)} °C</strong><br>
+             Suction line is <strong>${fmtSmart(sucT)} °C</strong>, so SH = <strong>${fmtSmart(sh)} K</strong> &nbsp;<span class="badge ${badgeMap[status]}">${statusText}</span><br>
+             <small class="muted">${advice}</small><br>
+             <small class="muted">Target: <strong>${tgt}</strong> for typical evaporator on ${ref}.</small>`;
   }
   const disP = n("rcDisP"), liqT = n("rcLiqT");
   if (disP > 0 || liqT !== 0){
     const tSat = pToT(ref, disP+1);
     const sc = tSat - liqT;
-    const badge = sc < 3 ? `<span class="badge badge-bad">Low — undercharge / flash gas</span>`
-                : sc > 15 ? `<span class="badge badge-warn">High — overcharge / restricted flow</span>`
-                :           `<span class="badge badge-good">Within typical 5–10 K band</span>`;
-    html += (html?"<br><br>":"") + `<h4>Subcool</h4>T<sub>sat</sub> @ ${disP} barg = ${fmt(tSat,1)} °C<br>
-            Subcool = <strong>${fmt(sc,1)} K</strong> ${badge}`;
+    let status, statusText, advice;
+    if (sc < 3)         { status = "bad";  statusText = "Low — undercharge / flash gas"; advice = "Likely undercharged or condenser short. Check sight glass for flash bubbles, refrigerant level, condenser fans, condenser cleanliness."; }
+    else if (sc > 15)   { status = "warn"; statusText = "High — overcharge / restriction"; advice = "Either overcharged or there's a liquid-line restriction (filter dryer blocked, kink, partially closed valve). Recover refrigerant and re-charge to spec."; }
+    else                { status = "good"; statusText = "Within typical 5–10 K band"; advice = "Healthy condenser performance — charge level and heat rejection are matched."; }
+    html += (html?"<br><br>":"") + `<h4>Subcool (liquid side)</h4>
+            T<sub>sat</sub> @ ${fmtSmart(disP)} barg = <strong>${fmtSmart(tSat)} °C</strong><br>
+            Liquid line is <strong>${fmtSmart(liqT)} °C</strong>, so SC = <strong>${fmtSmart(sc)} K</strong> &nbsp;<span class="badge ${badgeMap[status]}">${statusText}</span><br>
+            <small class="muted">${advice}</small><br>
+            <small class="muted">Target: <strong>5–10 K</strong> for typical condenser.</small>`;
   }
-  if (!html) html = `<span class="bad">Enter suction or discharge data.</span>`;
-  html += assumptionFooter(`Saturation table for ${ref}, linear interpolation • +1 bar for absolute conversion`);
+  if (!html) html = `<span class="bad">Enter suction or discharge data to begin.</span>`;
+  html += assumptionFooter(`Saturation table for ${ref}, linear interpolation • +1 bar for absolute conversion. Always read pressure and temperature at the same point on the same line.`);
   setResult("rcOut", html);
 }
 
 /* ---------- F-Gas / CO2e ---------- */
 function fgasHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('fgas_regulations_explained')">💡 F-Gas leak-check rules</button>
+  </div>
   <div class="field full"><label>Refrigerant</label>${refSelectHTML("fgRef")}</div>
   <div class="form-grid">
     <div class="field"><label>Charge (kg)</label><input id="fgKg" type="number" inputmode="decimal" placeholder="5"></div>
   </div>
-  <div id="fgOut" class="result muted">CO₂e = charge × GWP. Triggers F-Gas leak-check intervals.</div>`;
+  <div id="fgOut" class="result muted">CO₂-equivalent charge and the legal leak-check interval that triggers from it.</div>`;
 }
 function calcFgas(){
   const ref = v("fgRef"), kg = n("fgKg");
+  if (kg <= 0){ setResult("fgOut", `<span class="bad">Enter the refrigerant charge in kg (from the unit nameplate).</span>`); return; }
   const gwp = GWP[ref] || 0;
   const tco2 = kg*gwp/1000;
-  const interval = tco2 < 5 ? "No mandatory check" :
-                   tco2 < 50 ? "12-monthly checks" :
-                   tco2 < 500 ? "6-monthly checks (3-monthly without leak detection)" :
-                                "3-monthly checks (with permanent leak detection)";
-  const phaseDown = ref === "R410A" ? `<span class="badge badge-warn">High GWP — phase-down candidate</span>`
-                   : ref === "R134a" ? `<span class="badge badge-warn">High GWP</span>`
-                   : ref === "R32"   ? `<span class="badge badge-info">Mid GWP — A2L flammable</span>`
-                   :                    `<span class="badge badge-good">Very low GWP — A3 flammable</span>`;
-  let html = `<strong>${fmt(tco2,2)} tCO₂e</strong> ${phaseDown}<br>
-              ${kg} kg ${ref} × GWP ${gwp}<br><br>
-              <h4>F-Gas Regulation Status</h4>${interval}`;
-  html += assumptionFooter("EU/UK F-Gas Reg 517/2014 thresholds (5 / 50 / 500 tCO₂e). GWP per AR4.");
+
+  let intervalStatus, intervalText, intervalAdvice;
+  if (tco2 < 5)        { intervalStatus = "good"; intervalText = "Below threshold";              intervalAdvice = "No mandatory leak check under the F-Gas Regulation. Best practice is still an annual visual inspection."; }
+  else if (tco2 < 50)  { intervalStatus = "warn"; intervalText = "12-monthly check required";    intervalAdvice = "Annual leak check by an F-Gas certified person. Keep the F-Gas log on site, updated every visit."; }
+  else if (tco2 < 500) { intervalStatus = "bad";  intervalText = "6-monthly check required";     intervalAdvice = "6-monthly checks (or 12-monthly with permanent leak detection). Consider fitting leak detection to halve the workload."; }
+  else                 { intervalStatus = "bad";  intervalText = "3-monthly check required";     intervalAdvice = "3-monthly checks (or 6-monthly with permanent leak detection). Permanent leak detection effectively mandatory at this size."; }
+
+  let phaseStatus, phaseText, phaseAdvice;
+  if (ref === "R410A"){ phaseStatus = "warn"; phaseText = "High GWP — phase-down"; phaseAdvice = "GWP 2,088 — falls under the EU/UK F-Gas phase-down. Avoid for new equipment; consider R32 or R454B retrofit options."; }
+  else if (ref === "R134a"){ phaseStatus = "warn"; phaseText = "High GWP"; phaseAdvice = "GWP 1,430 — being phased down for stationary applications. Replacements include R513A, R450A."; }
+  else if (ref === "R32"){ phaseStatus = "info"; phaseText = "Mid GWP, A2L mildly flammable"; phaseAdvice = "GWP 675 — mainstream for splits/VRF. A2L safety classification — observe charge limits per BS EN 378."; }
+  else { phaseStatus = "good"; phaseText = "Very low GWP, A3 flammable"; phaseAdvice = "GWP 3 — excellent for the climate. A3 (highly flammable) — strict charge limits and ignition-source rules apply."; }
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+
+  const html = `
+    <h4>Headline</h4>
+    <strong>${fmtSmart(tco2)} tCO₂e</strong> &nbsp;<span class="badge ${badgeMap[intervalStatus]}">${intervalText}</span><br>
+    <small class="muted">${intervalAdvice}</small><br>
+    <small class="muted">Thresholds: <strong>&lt; 5 t</strong> none • <strong>5–50 t</strong> annual • <strong>50–500 t</strong> 6-monthly • <strong>&gt; 500 t</strong> 3-monthly.</small><br><br>
+
+    <h4>Charge calculation</h4>
+    ${fmtSmart(kg)} kg of <strong>${ref}</strong> × GWP ${gwp} = <strong>${fmtSmart(kg*gwp)} kg CO₂e</strong> = <strong>${fmtSmart(tco2)} tCO₂e</strong><br><br>
+
+    <h4>Refrigerant character</h4>
+    <span class="badge ${badgeMap[phaseStatus]}">${phaseText}</span><br>
+    <small class="muted">${phaseAdvice}</small>
+    ${assumptionFooter("EU/UK F-Gas Reg 517/2014 thresholds (5 / 50 / 500 tCO₂e). GWP per AR4. Permanent leak detection halves the mandatory check frequency.")}`;
   setResult("fgOut", html);
 }
 
 /* ---------- Refrigerant Saturation Lookup ---------- */
 function refsatHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('superheat_subcool_explained')">💡 Where you'd use this</button>
+  </div>
   <div class="field full"><label>Refrigerant</label>${refSelectHTML("rsRef")}</div>
   <div class="form-grid">
     <div class="field"><label>Mode</label>
@@ -1215,19 +1346,25 @@ function refsatHTML(){
     </div>
     <div class="field"><label>Value</label><input id="rsVal" type="number" inputmode="decimal" placeholder="5"></div>
   </div>
-  <div id="rsOut" class="result muted">Linear interpolation between table points.</div>`;
+  <div id="rsOut" class="result muted">Pure refrigerant saturation lookup — what's the boiling pressure at a given temperature, or vice versa.</div>`;
 }
 function calcRefSat(){
   const ref = v("rsRef"), mode = v("rsMode"), val = n("rsVal");
-  let html = "";
+  let html;
   if (mode === "t2p"){
     const p = tToP(ref, val);
-    html = `${ref} sat. T = ${val} °C → <strong>${fmt(p,2)} bar abs</strong> (${fmt(p-1,2)} bar g)`;
+    html = `<h4>Result</h4>
+            ${ref} saturation at <strong>${fmtSmart(val)} °C</strong>:<br>
+            <strong>${fmtSmart(p)} bar absolute</strong> (${fmtSmart(p-1)} bar gauge)<br>
+            <small class="muted">A pressure gauge on this refrigerant at this temperature should read about ${fmtSmart(p-1)} barg if the refrigerant is saturated (i.e. boiling/condensing).</small>`;
   } else {
     const t = pToT(ref, val);
-    html = `${ref} sat. P = ${val} bar abs → <strong>${fmt(t,1)} °C</strong>`;
+    html = `<h4>Result</h4>
+            ${ref} saturation at <strong>${fmtSmart(val)} bar absolute</strong> (${fmtSmart(val-1)} bar gauge):<br>
+            <strong>${fmtSmart(t)} °C</strong><br>
+            <small class="muted">Refrigerant boils/condenses at this temperature when held at this pressure. Subtract this from suction-line temperature to get superheat; subtract liquid-line temp from this to get subcool.</small>`;
   }
-  html += assumptionFooter(`Lookup table 9 points (-30 to +50 °C) • interpolated`);
+  html += assumptionFooter(`Lookup table for ${ref}, 9 points (-30 to +50 °C), linear interpolation. Field gauges typically read in barg — add 1 to convert to absolute.`);
   setResult("rsOut", html);
 }
 
@@ -1237,6 +1374,9 @@ function calcRefSat(){
 
 function ohmHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('breaker_tripping')">💡 Why breakers trip</button>
+  </div>
   <div class="field full"><label>Configuration</label>
     <select id="ohmCfg">
       <option value="1ph">Single-phase (V × I × pf)</option>
@@ -1249,24 +1389,42 @@ function ohmHTML(){
     <div class="field"><label>Current (A)</label><input id="ohmI" type="number" inputmode="decimal" placeholder="16"></div>
     <div class="field"><label>Power factor</label><input id="ohmPf" type="number" inputmode="decimal" value="0.85"></div>
   </div>
-  <div id="ohmOut" class="result muted">Computes real power and resistance.</div>`;
+  <div id="ohmOut" class="result muted">Real power (kW) and apparent power (kVA) from voltage, current and power factor.</div>`;
 }
 function calcOhm(){
   const cfg = v("ohmCfg"), V = n("ohmV"), I = n("ohmI"), pf = n("ohmPf") || 1;
-  let P;
-  if (cfg === "1ph") P = V*I*pf;
-  else if (cfg === "3ph") P = Math.sqrt(3)*V*I*pf;
-  else P = V*I;
-  const R = I > 0 ? V/I : 0;
-  let html = `<strong>${fmt(P/1000,3)} kW</strong> (${fmt(P,0)} W)<br>
-              Apparent: ${fmt((cfg==="3ph"?Math.sqrt(3)*V*I:V*I)/1000,3)} kVA<br>
-              Resistance V/I: ${fmt(R,2)} Ω`;
-  html += assumptionFooter("Power factor 0.85 default for inductive loads. DC ignores pf.");
+  if (V <= 0 || I <= 0){ setResult("ohmOut", `<span class="bad">Enter voltage and current.</span>`); return; }
+  const apparent = (cfg === "3ph" ? Math.sqrt(3)*V*I : V*I);
+  const real = cfg === "dc" ? V*I : apparent*pf;
+  const cfgLabel = cfg === "1ph" ? "Single-phase" : cfg === "3ph" ? "Three-phase" : "DC / resistive";
+
+  let pfStatus, pfText, pfAdvice;
+  if (cfg === "dc")            { pfStatus = "info"; pfText = "DC — power factor not applicable"; pfAdvice = "DC loads don't have power factor; real power = V × I."; }
+  else if (pf >= 0.95)         { pfStatus = "good"; pfText = "Excellent power factor"; pfAdvice = "Resistive load (heater) or well-corrected motor — utility happy."; }
+  else if (pf >= 0.85)         { pfStatus = "good"; pfText = "Good power factor"; pfAdvice = "Typical for modern inductive loads (motors, pumps with VSD)."; }
+  else if (pf >= 0.70)         { pfStatus = "warn"; pfText = "Modest power factor"; pfAdvice = "Older direct-on-line motors. PF correction capacitors would reduce kVA demand & utility charges."; }
+  else                         { pfStatus = "bad";  pfText = "Poor power factor"; pfAdvice = "Heavy inductive load. PF correction is almost certainly cost-effective — utility likely surcharging kVA demand."; }
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+
+  const html = `
+    <h4>Headline</h4>
+    Real power: <strong>${fmtSmart(real/1000)} kW</strong> (${fmtSmart(real)} W)<br>
+    Apparent power: <strong>${fmtSmart(apparent/1000)} kVA</strong> &nbsp;<span class="badge ${badgeMap[pfStatus]}">${pfText}</span><br>
+    <small class="muted">${pfAdvice}</small><br><br>
+
+    <h4>Detail</h4>
+    ${cfgLabel}: ${fmtSmart(V)} V × ${fmtSmart(I)} A${cfg!=='dc' ? ` × pf ${pf}` : ""}<br>
+    Resistance V/I (resistive only): ${fmtSmart(I>0?V/I:0)} Ω
+    ${assumptionFooter("Real power = useful power that does work. Apparent power = V × I with no regard for phase. Power factor = real ÷ apparent. Utilities charge on apparent kVA demand.")}`;
   setResult("ohmOut", html);
 }
 
 function vdropHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('vdrop_bs7671_explained')">💡 BS 7671 limits explained</button>
+    <button type="button" class="explain-link" onclick="openExplanation('breaker_tripping')">💡 Why breakers trip</button>
+  </div>
   <div class="form-grid">
     <div class="field"><label>Phase</label>
       <select id="vdCfg"><option value="1ph">Single-phase</option><option value="3ph">Three-phase</option></select>
@@ -1277,28 +1435,43 @@ function vdropHTML(){
     <div class="field"><label>CSA (mm²)</label><input id="vdCsa" type="number" inputmode="decimal" placeholder="6"></div>
     <div class="field"><label>Power factor</label><input id="vdPf" type="number" inputmode="decimal" value="0.95"></div>
   </div>
-  <div id="vdOut" class="result muted">BS 7671 limits: 3% lighting, 5% power. Cu @ 70 °C.</div>`;
+  <div id="vdOut" class="result muted">BS 7671 caps voltage drop at 3% (lighting) / 5% (everything else). Cu cable @ 70 °C.</div>`;
 }
 function calcVdrop(){
   const cfg = v("vdCfg"), V = n("vdV"), I = n("vdI"), L = n("vdL"), csa = n("vdCsa"), pf = n("vdPf") || 1;
-  if (csa <= 0 || L <= 0 || I <= 0){ setResult("vdOut", `<span class="bad">Fill in I, L and CSA.</span>`); return; }
-  // ρ_cu @ 70°C ≈ 0.0224 Ω·mm²/m
+  if (csa <= 0 || L <= 0 || I <= 0){ setResult("vdOut", `<span class="bad">Fill in current (A), length (m) and cable CSA (mm²).</span>`); return; }
   const Rper = 0.0224 / csa;
   const vd = (cfg === "1ph" ? 2 : Math.sqrt(3)) * I * L * Rper * pf;
   const pct = V > 0 ? vd/V*100 : 0;
-  const limit = 5;
-  const badge = pct <= 3 ? `<span class="badge badge-good">Within lighting limit (3%)</span>`
-              : pct <= 5 ? `<span class="badge badge-warn">Within power limit (5%)</span>`
-              :            `<span class="badge badge-bad">Exceeds BS 7671 5% — uprate cable</span>`;
-  let html = `<strong>${fmt(vd,2)} V drop</strong> (${fmt(pct,2)} %) ${badge}<br>
-              Cable resistance: ${fmt(Rper*1000,3)} mΩ/m<br>
-              Total loop R: ${fmt((cfg==="1ph"?2:1)*L*Rper,3)} Ω`;
-  html += assumptionFooter("Copper @ 70 °C, ρ = 0.0224 Ω·mm²/m. Excludes reactance — fine ≤ 16 mm². Above that, use BS 7671 mV/A/m tables.");
+
+  let status, statusText, advice;
+  if (pct <= 3)        { status = "good"; statusText = "Within lighting limit (3%)"; advice = "Comfortably under both BS 7671 limits — fine for any circuit."; }
+  else if (pct <= 5)   { status = "warn"; statusText = "Within power limit (5%)";   advice = "OK for power but exceeds the lighting limit. For lighting circuits, step CSA up one size."; }
+  else if (pct <= 8)   { status = "bad";  statusText = "Exceeds BS 7671 5% — uprate"; advice = "Step the cable up at least one size. Drop scales with 1/CSA — going from 4 mm² to 6 mm² typically drops the percentage by ~33%."; }
+  else                 { status = "bad";  statusText = "Severe — re-design"; advice = "Cable is significantly undersized. Step up two sizes or split the run / use three-phase if available. Equipment will under-perform and overheat."; }
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+  const cfgLabel = cfg === "1ph" ? "Single-phase" : "Three-phase";
+
+  const html = `
+    <h4>Headline</h4>
+    Voltage drop: <strong>${fmtSmart(vd)} V</strong> (${fmtSmart(pct)}% of ${fmtSmart(V)} V) &nbsp;<span class="badge ${badgeMap[status]}">${statusText}</span><br>
+    <small class="muted">${advice}</small><br>
+    <small class="muted">BS 7671 limits: <strong>3%</strong> lighting • <strong>5%</strong> all other circuits.</small><br><br>
+
+    <h4>Detail</h4>
+    ${cfgLabel}: ${fmtSmart(I)} A × ${fmtSmart(L)} m / ${fmtSmart(csa)} mm² Cu @ 70 °C × pf ${pf}<br>
+    Cable resistance: ${fmtSmart(Rper*1000)} mΩ/m<br>
+    Total loop R: ${fmtSmart((cfg==="1ph"?2:1)*L*Rper)} Ω
+    ${assumptionFooter("Copper @ 70 °C, ρ = 0.0224 Ω·mm²/m. Resistance only — no reactance. Accurate up to ~16 mm² CSA. Above that, use BS 7671 Appendix 4 mV/A/m tables which include reactance.")}`;
   setResult("vdOut", html);
 }
 
 function motorHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('fan_laws')">💡 Fan laws</button>
+    <button type="button" class="explain-link" onclick="openExplanation('pulley_changes')">💡 Pulley changes</button>
+  </div>
   <div class="form-grid">
     <div class="field"><label>Motor input (kW)</label><input id="mtKw" type="number" inputmode="decimal" placeholder="7.5"></div>
     <div class="field"><label>Efficiency (%)</label><input id="mtEff" type="number" inputmode="decimal" value="88"></div>
@@ -1309,18 +1482,31 @@ function motorHTML(){
       </select>
     </div>
   </div>
-  <div id="mtOut" class="result muted">Heat gain from motor losses (and full input if inside space).</div>`;
+  <div id="mtOut" class="result muted">How much of the motor's electrical input ends up as heat in the conditioned space.</div>`;
 }
 function calcMotor(){
   const kw = n("mtKw"), eff = n("mtEff")/100, loc = v("mtLoc");
-  if (kw <= 0 || eff <= 0){ setResult("mtOut", `<span class="bad">Enter motor kW and efficiency.</span>`); return; }
+  if (kw <= 0 || eff <= 0){ setResult("mtOut", `<span class="bad">Enter motor input (kW) and efficiency (%).</span>`); return; }
   const losses = kw*(1-eff);
   const heatToSpace = loc === "in" ? kw : losses;
-  let html = `<strong>${fmt(heatToSpace,2)} kW</strong> heat to space<br>
-              Motor losses: ${fmt(losses,2)} kW (${fmt((1-eff)*100,1)}%)<br>
-              Input power: ${fmt(kw,2)} kW @ ${fmt(eff*100,0)}% η`;
-  if (loc === "in") html += `<br><span class="badge badge-info">All input becomes space heat (driven equipment also inside).</span>`;
-  html += assumptionFooter("Use motor losses only when shaft work leaves the conditioned space (e.g. outdoor fan).");
+
+  let effStatus, effText, effAdvice;
+  if (eff >= 0.92)        { effStatus = "good"; effText = "IE3 / IE4 efficiency"; effAdvice = "Modern premium-efficiency motor. Heat losses minimised."; }
+  else if (eff >= 0.85)   { effStatus = "good"; effText = "Standard efficiency"; effAdvice = "Typical IE2 (high-efficiency) motor. Acceptable for most applications."; }
+  else if (eff >= 0.75)   { effStatus = "warn"; effText = "Older / smaller motor"; effAdvice = "Below IE2. Consider replacement at next overhaul — payback often 2–5 years on running motors."; }
+  else                    { effStatus = "bad";  effText = "Low efficiency — review"; effAdvice = "Significant losses as heat. Check the figure is right; older small motors can dip below 75% but a building services fan or pump shouldn't."; }
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+
+  let html = `
+    <h4>Headline</h4>
+    Heat to space: <strong>${fmtSmart(heatToSpace)} kW</strong>${loc === "in" ? " (all input — motor inside)" : " (losses only — shaft work leaves the space)"}<br>
+    <small class="muted">${loc === "in" ? "When the motor sits inside the room being conditioned, ALL its electrical input becomes heat. The shaft work drives a fan or pump that also dumps its energy into the room." : "When the motor sits inside but drives equipment outside (e.g. inside an AHU plant room driving an outdoor extract fan), only the motor's inefficiency stays as room heat — the shaft work leaves with the airflow."}</small><br><br>
+
+    <h4>Detail</h4>
+    Input power: ${fmtSmart(kw)} kW @ ${fmtSmart(eff*100)}% η &nbsp;<span class="badge ${badgeMap[effStatus]}">${effText}</span><br>
+    <small class="muted">${effAdvice}</small><br>
+    Motor losses (always heat): <strong>${fmtSmart(losses)} kW</strong> (${fmtSmart((1-eff)*100)}% of input)
+    ${assumptionFooter("Use motor losses only when shaft work leaves the conditioned space (outdoor fan, basement pump). Otherwise treat all input as room heat gain.")}`;
   setResult("mtOut", html);
 }
 
@@ -1349,12 +1535,15 @@ function pressureToPa(val,u){
 }
 function calcPressure(){
   const pa = pressureToPa(n("pressVal"), v("pressUnit"));
-  const html = `<strong>${fmt(pa,1)} Pa</strong><br>
-                ${fmt(pa/1000,3)} kPa<br>
-                ${fmt(pa/9.80665,2)} mmH₂O<br>
-                ${fmt(pa/249.0889,3)} in.wg<br>
-                ${fmt(pa/100000,5)} bar<br>
-                ${fmt(pa/6894.757,4)} PSI` + assumptionFooter("1 mmH₂O = 9.80665 Pa • 1 in.wg = 249.0889 Pa");
+  if (pa === 0){ setResult("pressOut", `<span class="bad">Enter a value to convert.</span>`); return; }
+  const html = `<h4>All units</h4>
+                <strong>${fmtSmart(pa)} Pa</strong><br>
+                ${fmtSmart(pa/1000)} kPa<br>
+                ${fmtSmart(pa/9.80665)} mmH₂O<br>
+                ${fmtSmart(pa/249.0889)} in.wg<br>
+                ${fmtSmart(pa/100000)} bar<br>
+                ${fmtSmart(pa/6894.757)} PSI`
+                + assumptionFooter("1 mmH₂O = 9.80665 Pa • 1 in.wg = 249.0889 Pa • 1 bar = 100,000 Pa");
   setResult("pressOut", html);
 }
 
@@ -1365,34 +1554,53 @@ function heatHTML(){
 }
 function calcHeat(){
   const kw = n("kwVal");
+  if (kw === 0){ setResult("heatOut", `<span class="bad">Enter a kW value to convert.</span>`); return; }
   setResult("heatOut",
-    `<strong>${fmt(kw,2)} kW</strong><br>${fmt(kw*3412.142,0)} BTU/hr<br>${fmt(kw/3.51685,2)} TR`
-    + assumptionFooter("1 TR = 3.51685 kW • 1 kW = 3412.14 BTU/hr"));
+    `<h4>All units</h4>
+     <strong>${fmtSmart(kw)} kW</strong><br>
+     ${fmtSmart(kw*3412.142)} BTU/hr<br>
+     ${fmtSmart(kw/3.51685)} TR (tons of refrigeration)`
+    + assumptionFooter("1 TR = 3.51685 kW • 1 kW = 3,412.14 BTU/hr"));
 }
 
 function roomHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('airflow_vs_resistance')">💡 Airflow vs resistance</button>
+  </div>
   <div class="form-grid">
     <div class="field"><label>Length (m)</label><input id="rmL" type="number" inputmode="decimal" placeholder="6"></div>
     <div class="field"><label>Width (m)</label><input id="rmW" type="number" inputmode="decimal" placeholder="4"></div>
     <div class="field"><label>Height (m)</label><input id="rmH" type="number" inputmode="decimal" placeholder="2.4"></div>
     <div class="field"><label>Airflow (l/s)</label><input id="rmQ" type="number" inputmode="decimal" placeholder="100"></div>
   </div>
-  <div id="rmOut" class="result muted">Volume and air-changes-per-hour.</div>`;
+  <div id="rmOut" class="result muted">Room volume and air changes per hour (ACH) with use-case guidance.</div>`;
 }
 function calcRoom(){
   const vol = n("rmL")*n("rmW")*n("rmH");
-  const m3h = n("rmQ")*3.6;
+  const qLs = n("rmQ");
+  const m3h = qLs*3.6;
   const ach = vol > 0 ? m3h/vol : 0;
-  let badge = ach < 1   ? `<span class="badge badge-bad">Insufficient for occupied space</span>`
-            : ach < 4   ? `<span class="badge badge-good">Office / general (Bldg Regs F)</span>`
-            : ach < 10  ? `<span class="badge badge-good">Meeting / classroom</span>`
-            : ach < 20  ? `<span class="badge badge-warn">High — kitchen / lab</span>`
-            :             `<span class="badge badge-warn">Very high — cleanroom / fume</span>`;
+  if (vol <= 0){ setResult("rmOut", `<span class="bad">Enter room L × W × H.</span>`); return; }
+
+  let status, statusText, advice;
+  if (ach < 1)         { status = "bad";  statusText = "Insufficient for occupied space"; advice = "Below 1 ACH — air feels stale, CO₂ rises quickly. Approved Doc F minimum for offices is ~1 ACH."; }
+  else if (ach < 4)    { status = "good"; statusText = "Office / general"; advice = "Typical band for offices, retail, residential — meets Approved Doc F."; }
+  else if (ach < 10)   { status = "good"; statusText = "Meeting / classroom"; advice = "Higher band suits dense occupancy or longer dwell time."; }
+  else if (ach < 20)   { status = "warn"; statusText = "Kitchen / lab / busy"; advice = "High-load space — appropriate for kitchens, gym, or labs with light hazards."; }
+  else                 { status = "warn"; statusText = "Cleanroom / fume / heavy lab"; advice = "Very high — appropriate for cleanrooms or fume-control. Confirm whether this much air is genuinely needed."; }
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+
   setResult("rmOut",
-    `<strong>Volume: ${fmt(vol,1)} m³</strong><br>Airflow: ${fmt(m3h,0)} m³/h<br>
-     ACH: <strong>${fmt(ach,2)}</strong> ${badge}`
-     + assumptionFooter("ACH guides per CIBSE Guide A / ApprovedDoc F."));
+    `<h4>Headline</h4>
+     ACH = <strong>${fmtSmart(ach)}</strong> &nbsp;<span class="badge ${badgeMap[status]}">${statusText}</span><br>
+     <small class="muted">${advice}</small><br>
+     <small class="muted">Typical bands: <strong>1–4</strong> office • <strong>4–10</strong> meeting/classroom • <strong>10–20</strong> kitchen/lab • <strong>20+</strong> cleanroom.</small><br><br>
+
+     <h4>Detail</h4>
+     Volume: ${fmtSmart(vol)} m³ (${fmtSmart(n("rmL"))} × ${fmtSmart(n("rmW"))} × ${fmtSmart(n("rmH"))} m)<br>
+     Airflow: ${fmtSmart(qLs)} l/s = ${fmtSmart(m3h)} m³/h`
+     + assumptionFooter("Bands per CIBSE Guide A / Approved Document F. ACH = airflow ÷ room volume; same ACH means very different absolute flows in different room sizes."));
 }
 
 /* ==========================================================================
