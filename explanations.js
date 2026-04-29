@@ -118,6 +118,35 @@ const EXPLANATIONS = {
     ]
   },
 
+  pipe_friction_explained: {
+    title: "Pipe friction & velocity — what the numbers mean",
+    icon: "🪈",
+    summary: "Reading head loss, Pa/m and velocity in plain English",
+    confidence: "high",
+    relatedTools: ["pipe", "water", "expansion"],
+    simple: "When water flows through a pipe, it scrapes against the pipe wall. That scraping is friction, and friction eats pressure. The pump has to make up that lost pressure to keep water moving. The friction tool tells you how much pressure is being eaten per metre of pipe.",
+    whyItMatters: "If friction loss is too high, you either need a bigger pump (expensive forever — every kWh of pump power leaves as heat and bills), or a bigger pipe (one-off cost). It's almost always cheaper to upsize the pipe than upsize the pump.",
+    realWorld: "A 50 mm copper pipe carrying 2 l/s of water gives ≈ 0.025 m head loss per metre — i.e. about 250 Pa/m or 25 mm water gauge per metre. Over a 30 m run that's 0.75 m of head the pump must produce just to fight friction. Quiet, comfortable, sensible.",
+    checkOnSite: [
+      "Internal pipe diameter (not the outside diameter — Cu 22 mm OD is only ~20 mm ID)",
+      "Actual measured flow (clamp ultrasonic, or duty/ΔT calculation)",
+      "Pipe material — copper is smoother than old steel, plastic smoother still",
+      "Whether the pipe is full of scale or sludge (especially old steel) — that effectively shrinks the bore"
+    ],
+    commonMistakes: [
+      "Using outside diameter instead of internal — gives wildly low friction",
+      "Forgetting fittings — a pipe with lots of bends, tees and valves often loses 30–50% MORE than the straight-pipe number",
+      "Comparing Pa/m to mmH₂O/m without converting (1 mmH₂O ≈ 9.8 Pa)",
+      "Ignoring the velocity warning — high friction is usually because velocity is too high for the pipe size"
+    ],
+    fix: [
+      "Velocity above 2.5 m/s? Step the pipe size up one increment — friction drops dramatically (it scales roughly with V²)",
+      "Velocity below 0.5 m/s? Pipe is over-sized — fine for the pump, but air won't purge and sludge settles",
+      "If the friction figure looks impossibly high, check your inputs first: a 25 mm pipe will never carry 30 l/s, no matter what the maths says",
+      "Add fitting allowances at the project stage — typically 10–20% extra for a tidy circuit, 30–50% for a busy one with many tees and valves"
+    ]
+  },
+
   pulley_changes: {
     title: "Pulley changes",
     icon: "⚙️",

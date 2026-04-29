@@ -75,6 +75,22 @@ function n(id){ return parseFloat($(id)?.value) || 0; }
 function v(id){ return $(id)?.value || ""; }
 function fmt(x, d=3){ return Number.isFinite(x) ? x.toFixed(d) : "0"; }
 function fmtN(x, d=0){ return Number.isFinite(x) ? Math.round(x*Math.pow(10,d))/Math.pow(10,d) : 0; }
+/* fmtSmart — magnitude-aware: never more than 3 dp, drops decimals on big
+   numbers, adds locale thousands separators. Use for headline result values. */
+function fmtSmart(x){
+  if (!Number.isFinite(x)) return "0";
+  const abs = Math.abs(x);
+  if (abs === 0)        return "0";
+  let dp;
+  if      (abs >= 10000) dp = 0;
+  else if (abs >= 1000)  dp = 1;
+  else if (abs >= 100)   dp = 2;
+  else if (abs >= 10)    dp = 2;
+  else if (abs >= 1)     dp = 3;
+  else if (abs >= 0.01)  dp = 3;
+  else                   return x.toExponential(2);
+  return x.toLocaleString("en-GB", {minimumFractionDigits:0, maximumFractionDigits:dp});
+}
 
 /* ---------- Mode toggle ---------- */
 function setMode(m){
@@ -948,6 +964,9 @@ function calcWater(){
 /* ---------- Pipe Friction (Hazen-Williams) ---------- */
 function pipeHTML(){
   return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('pipe_friction_explained')">💡 What do these numbers mean?</button>
+  </div>
   <div class="form-grid">
     <div class="field"><label>Internal diameter (mm)</label><input id="pipD" type="number" inputmode="decimal" placeholder="50"></div>
     <div class="field"><label>Flow (l/s)</label><input id="pipQ" type="number" inputmode="decimal" placeholder="2"></div>
@@ -960,25 +979,63 @@ function pipeHTML(){
     </div>
     <div class="field"><label>Length (m, optional)</label><input id="pipL" type="number" inputmode="decimal" placeholder="30"></div>
   </div>
-  <div id="pipOut" class="result muted">Hazen-Williams head loss in m/m water column.</div>`;
+  <div id="pipOut" class="result muted">Pipe friction in plain English: how much pressure the pump has to make to push water through this pipe.</div>`;
 }
 function calcPipe(){
-  const dM = n("pipD")/1000, qm3s = n("pipQ")/1000, C = HW_C[v("pipMat")] || 120, L = n("pipL");
+  const dMm = n("pipD"), qLs = n("pipQ");
+  const dM = dMm/1000, qm3s = qLs/1000, C = HW_C[v("pipMat")] || 120, L = n("pipL");
   if (dM <= 0 || qm3s <= 0){ setResult("pipOut", `<span class="bad">Enter diameter and flow.</span>`); return; }
   // hL/L (m/m) = 10.67 × Q^1.852 / ( C^1.852 × D^4.87 )
   const hLperM = 10.67 * Math.pow(qm3s,1.852) / (Math.pow(C,1.852) * Math.pow(dM,4.87));
   const paPerM = hLperM * RHO_W * G;
   const area = Math.PI*Math.pow(dM/2,2);
   const vel = qm3s/area;
-  let badge = vel < 1 ? `<span class="badge badge-good">Quiet</span>`
-            : vel < 2 ? `<span class="badge badge-warn">Acceptable</span>`
-            :           `<span class="badge badge-bad">Erosion / noise risk</span>`;
-  let html = `<strong>${fmt(hLperM*1000,2)} mm/m</strong> head loss<br>
-              ≈ <strong>${fmt(paPerM,1)} Pa/m</strong><br>
-              Velocity: ${fmt(vel,2)} m/s ${badge}<br>
-              C-coefficient: ${C}`;
-  if (L > 0) html += `<br><br><strong>Total over ${L} m: ${fmt(hLperM*L,3)} m head ≈ ${fmt(paPerM*L/1000,1)} kPa</strong>`;
-  html += assumptionFooter("Hazen-Williams empirical (water, ~10–40 °C). For glycol, derate flow with viscosity correction.");
+  const matName = v("pipMat") === "copper" ? "copper" : v("pipMat") === "plastic" ? "plastic" : "steel";
+
+  // Interpretation status — velocity bands set the headline
+  let status, statusText, advice;
+  if (vel < 0.5){
+    status = "info";
+    statusText = "Very low velocity";
+    advice = "Flow is sluggish. Air may not purge from the system; sludge may settle in the pipe.";
+  } else if (vel <= 1.5){
+    status = "good";
+    statusText = "Quiet, well-sized";
+    advice = "Velocity sits comfortably in the typical band for chilled / heating circuits (1–1.5 m/s).";
+  } else if (vel <= 2.5){
+    status = "warn";
+    statusText = "Borderline — check noise tolerance";
+    advice = "Approaching the upper limit. Acceptable for plant rooms; review if pipe runs through occupied spaces.";
+  } else if (vel <= 4){
+    status = "bad";
+    statusText = "Excessive — noise & erosion likely";
+    advice = "Velocity is above 2.5 m/s. Consider stepping pipe size up one increment to bring it into the quiet band.";
+  } else {
+    status = "bad";
+    statusText = "Physically implausible — check inputs";
+    advice = `A ${dMm} mm pipe cannot realistically carry ${qLs} l/s. Either the diameter is wrong, the flow is wrong, or this isn't water. Sense-check the inputs before using these numbers.`;
+  }
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+
+  let html = `
+    <h4>Headline</h4>
+    <strong>${fmtSmart(paPerM)} Pa/m</strong> pressure drop along the pipe<br>
+    <small class="muted">(${fmtSmart(hLperM*1000)} mm of water-column head per metre)</small><br><br>
+
+    <h4>Velocity</h4>
+    <strong>${fmtSmart(vel)} m/s</strong> &nbsp;<span class="badge ${badgeMap[status]}">${statusText}</span><br>
+    <small class="muted">${advice}</small><br>
+    <small class="muted">Typical band for water systems: <strong>1.0 – 1.5 m/s</strong> quiet • up to 2.5 m/s acceptable • above 2.5 m/s noisy / erosive.</small><br>
+    <br>
+    <h4>Pipe</h4>
+    Ø${dMm} mm internal • ${matName} (Hazen-Williams C = ${C}) • Flow ${fmtSmart(qLs)} l/s`;
+
+  if (L > 0){
+    html += `<br><br><h4>Over ${fmtSmart(L)} m run</h4>
+             Total head loss: <strong>${fmtSmart(hLperM*L)} m water</strong><br>
+             ≈ <strong>${fmtSmart(paPerM*L/1000)} kPa</strong> the pump must overcome on this run alone (excluding fittings).`;
+  }
+  html += assumptionFooter("Hazen-Williams empirical formula (water, ~10–40 °C). Glycol mixes need a viscosity correction — flow capacity drops 5–25% depending on concentration.");
   setResult("pipOut", html);
 }
 
