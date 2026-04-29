@@ -1,4 +1,4 @@
-const CACHE_NAME = "otto-cache-v15";
+const CACHE_NAME = "otto-cache-v16";
 const FILES_TO_CACHE = [
   "./",
   "./index.html",
@@ -7,7 +7,8 @@ const FILES_TO_CACHE = [
   "./explanations.js",
   "./manifest.json",
   "./icon-192.png",
-  "./icon-512.png"
+  "./icon-512.png",
+  "./favicon.ico"
 ];
 
 self.addEventListener("install", event => {
