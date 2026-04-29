@@ -310,6 +310,112 @@ footer{
   color:var(--muted);
   font-size:13px;
 }
+/* ---------- Explanation Engine (Phase 1) ---------- */
+.explain-card{
+  margin:0;
+}
+.explain-summary{
+  font-size:15px;
+  color:var(--text);
+  margin:0 0 14px;
+  padding:10px 14px;
+  background:var(--green-soft);
+  border-left:4px solid var(--green);
+  border-radius:10px;
+  line-height:1.5;
+}
+.explain-section{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:12px;
+  margin-bottom:8px;
+  padding:0 14px;
+  transition:border-color .15s;
+}
+.explain-section[open]{
+  border-color:var(--green);
+}
+.explain-section > summary{
+  list-style:none;
+  cursor:pointer;
+  font-weight:800;
+  font-size:14px;
+  padding:12px 0;
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  -webkit-user-select:none;
+  user-select:none;
+}
+.explain-section > summary::-webkit-details-marker{display:none}
+.explain-section > summary::before{
+  content:"▸";
+  color:var(--muted);
+  font-size:12px;
+  transition:transform .15s;
+  display:inline-block;
+}
+.explain-section[open] > summary::before{
+  transform:rotate(90deg);
+}
+.explain-section > p,
+.explain-section > ul{
+  margin:0 0 12px;
+  line-height:1.55;
+  font-size:14px;
+  color:var(--text);
+}
+.explain-section > ul{
+  padding-left:22px;
+}
+.explain-section > ul li{
+  margin-bottom:6px;
+}
+.explain-related{
+  margin-top:14px;
+  padding:10px 14px;
+  background:#f8fafc;
+  border:1px solid var(--line);
+  border-radius:12px;
+}
+.explain-related h4{
+  margin:0 0 8px;
+  font-size:12px;
+  text-transform:uppercase;
+  letter-spacing:1px;
+  color:var(--muted);
+}
+.explain-related .explain-link{
+  margin:4px 4px 0 0;
+}
+.explain-confidence{
+  margin-top:14px;
+  font-size:12px;
+  color:var(--muted);
+  text-align:right;
+}
+.explain-link{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  background:var(--green-soft);
+  color:var(--green-dark);
+  border:1px solid var(--green);
+  border-radius:999px;
+  padding:6px 12px;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+}
+.explain-link:active{transform:scale(.97)}
+.explain-tools-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin:8px 0 14px;
+}
+
 /* ---------- Live Ductulator ---------- */
 .duct-shape-tabs{
   display:flex;

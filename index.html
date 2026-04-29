@@ -147,6 +147,35 @@
       </button>
     </section>
 
+    <h3 class="section-title">Explain It Simply</h3>
+    <section class="grid">
+      <button class="tool-card" onclick="openExplanation('duct_condensation')">
+        <span>💧</span>
+        <strong>Why ducts sweat</strong>
+        <small>Condensation, dew point, when to insulate</small>
+      </button>
+      <button class="tool-card" onclick="openExplanation('fan_laws')">
+        <span>🌀</span>
+        <strong>Fan laws (simple)</strong>
+        <small>Speed up a little, pay a lot</small>
+      </button>
+      <button class="tool-card" onclick="openExplanation('airflow_vs_resistance')">
+        <span>🚧</span>
+        <strong>Airflow vs resistance</strong>
+        <small>Why a faster fan doesn't always help</small>
+      </button>
+      <button class="tool-card" onclick="openExplanation('breaker_tripping')">
+        <span>⚡</span>
+        <strong>Why breakers trip</strong>
+        <small>Tracing the cause, not just resetting</small>
+      </button>
+      <button class="tool-card" onclick="openExplanation('pulley_changes')">
+        <span>⚙️</span>
+        <strong>Pulley changes</strong>
+        <small>Small change, big power impact</small>
+      </button>
+    </section>
+
     <section id="toolPanel" class="panel hidden" aria-live="polite">
       <div class="panel-head">
         <h2 id="panelTitle">Tool</h2>
@@ -160,6 +189,7 @@
     OTTO v1.2 • Built for site use • Works offline after first load • Assumes ρ<sub>air</sub> = 1.2 kg/m³
   </footer>
 
+  <script src="explanations.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

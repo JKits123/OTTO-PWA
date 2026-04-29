@@ -511,6 +511,10 @@ function ductHTML(){
     </select>
   </div>
   <div class="solver-hint">Type any <strong>two</strong> values for circular, or <strong>both dimensions plus one</strong> of flow / velocity / Pa-per-m for rect &amp; oval. The others solve live.</div>
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('airflow_vs_resistance')">💡 Airflow vs resistance</button>
+    <button type="button" class="explain-link" onclick="openExplanation('fan_laws')">💡 Fan laws</button>
+  </div>
   <div id="ductSolver"></div>
   <div id="ductGauges"></div>
   <div id="ductOut" class="result muted">Live solution will appear here.</div>`;
