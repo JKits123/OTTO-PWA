@@ -39,183 +39,240 @@
       <div id="smartResult" class="result muted">Type, dictate, or paste a quick site calculation above.</div>
     </section>
 
-    <h3 class="section-title">Air Systems &amp; Ventilation</h3>
-    <section class="grid">
-      <button class="tool-card" onclick="openTool('duct')">
-        <span>🌪️</span>
-        <strong>Duct Sizer</strong>
-        <small>Live ductulator • type any 2 values, the rest solve</small>
-      </button>
-      <button class="tool-card" onclick="openTool('friction')">
-        <span>📉</span>
-        <strong>Duct Friction</strong>
-        <small>Pa/m • Darcy-Weisbach (Colebrook)</small>
-      </button>
-      <button class="tool-card" onclick="openTool('grille')">
-        <span>▤</span>
-        <strong>Grilles</strong>
-        <small>Free area, face velocity</small>
-      </button>
-      <button class="tool-card" onclick="openTool('psych')">
-        <span>💨</span>
-        <strong>Psychrometrics</strong>
-        <small>Dew point, enthalpy, W, mixed air, SHR</small>
-      </button>
-    </section>
+    <details class="tool-section">
+      <summary>
+        <span class="tool-section-icon">🌬️</span>
+        <span class="tool-section-title">Air Systems &amp; Ventilation</span>
+        <span class="tool-section-count">4</span>
+      </summary>
+      <section class="grid">
+        <button class="tool-card" onclick="openTool('duct')">
+          <span>🌪️</span>
+          <strong>Duct Sizer</strong>
+          <small>Live ductulator • type any 2 values, the rest solve</small>
+        </button>
+        <button class="tool-card" onclick="openTool('friction')">
+          <span>📉</span>
+          <strong>Duct Friction</strong>
+          <small>Pa/m • Darcy-Weisbach (Colebrook)</small>
+        </button>
+        <button class="tool-card" onclick="openTool('grille')">
+          <span>▤</span>
+          <strong>Grilles</strong>
+          <small>Free area, face velocity</small>
+        </button>
+        <button class="tool-card" onclick="openTool('psych')">
+          <span>💨</span>
+          <strong>Psychrometrics</strong>
+          <small>Dew point, enthalpy, W, mixed air, SHR</small>
+        </button>
+      </section>
+    </details>
 
-    <h3 class="section-title">Water &amp; Public Health</h3>
-    <section class="grid">
-      <button class="tool-card" onclick="openTool('water')">
-        <span>💧</span>
-        <strong>Water Flow</strong>
-        <small>kW &amp; ΔT • water / EG / PG</small>
-      </button>
-      <button class="tool-card" onclick="openTool('pipe')">
-        <span>🪈</span>
-        <strong>Pipe Friction</strong>
-        <small>Hazen-Williams • steel / copper / plastic</small>
-      </button>
-      <button class="tool-card" onclick="openTool('expansion')">
-        <span>🛢️</span>
-        <strong>Expansion / Pump</strong>
-        <small>Vessel sizing • pump duty</small>
-      </button>
-    </section>
+    <details class="tool-section">
+      <summary>
+        <span class="tool-section-icon">♨️</span>
+        <span class="tool-section-title">Heating &amp; Coils</span>
+        <span class="tool-section-count">1</span>
+      </summary>
+      <section class="grid">
+        <button class="tool-card" onclick="openTool('steam')">
+          <span>♨️</span>
+          <strong>Steam Coil Estimator</strong>
+          <small>Existing coil kW output • air-side or steam pipe method</small>
+        </button>
+      </section>
+    </details>
 
-    <h3 class="section-title">Refrigeration</h3>
-    <section class="grid">
-      <button class="tool-card" onclick="openTool('refcycle')">
-        <span>❄️</span>
-        <strong>Superheat / Subcool</strong>
-        <small>Saturation lookup R32, R410A, R134a, R290</small>
-      </button>
-      <button class="tool-card" onclick="openTool('fgas')">
-        <span>🌍</span>
-        <strong>F-Gas / CO₂e</strong>
-        <small>Charge × GWP → tCO₂e leak threshold</small>
-      </button>
-      <button class="tool-card" onclick="openTool('refsat')">
-        <span>📊</span>
-        <strong>Refrigerant Lookup</strong>
-        <small>P↔T saturation tables</small>
-      </button>
-    </section>
+    <details class="tool-section">
+      <summary>
+        <span class="tool-section-icon">💧</span>
+        <span class="tool-section-title">Water &amp; Public Health</span>
+        <span class="tool-section-count">3</span>
+      </summary>
+      <section class="grid">
+        <button class="tool-card" onclick="openTool('water')">
+          <span>💧</span>
+          <strong>Water Flow</strong>
+          <small>kW &amp; ΔT • water / EG / PG</small>
+        </button>
+        <button class="tool-card" onclick="openTool('pipe')">
+          <span>🪈</span>
+          <strong>Pipe Friction</strong>
+          <small>Hazen-Williams • steel / copper / plastic</small>
+        </button>
+        <button class="tool-card" onclick="openTool('expansion')">
+          <span>🛢️</span>
+          <strong>Expansion / Pump</strong>
+          <small>Vessel sizing • pump duty</small>
+        </button>
+      </section>
+    </details>
 
-    <h3 class="section-title">Electrical</h3>
-    <section class="grid">
-      <button class="tool-card" onclick="openTool('ohm')">
-        <span>⚡</span>
-        <strong>Ohm &amp; 3-Phase</strong>
-        <small>V, I, R, P • single &amp; three phase</small>
-      </button>
-      <button class="tool-card" onclick="openTool('vdrop')">
-        <span>📏</span>
-        <strong>Voltage Drop</strong>
-        <small>Cable length • CSA • current</small>
-      </button>
-      <button class="tool-card" onclick="openTool('motor')">
-        <span>🔧</span>
-        <strong>Motor Heat Gain</strong>
-        <small>kW × (1 − η) • plant room load</small>
-      </button>
-    </section>
+    <details class="tool-section">
+      <summary>
+        <span class="tool-section-icon">❄️</span>
+        <span class="tool-section-title">Refrigeration</span>
+        <span class="tool-section-count">3</span>
+      </summary>
+      <section class="grid">
+        <button class="tool-card" onclick="openTool('refcycle')">
+          <span>❄️</span>
+          <strong>Superheat / Subcool</strong>
+          <small>Saturation lookup R32, R410A, R134a, R290</small>
+        </button>
+        <button class="tool-card" onclick="openTool('fgas')">
+          <span>🌍</span>
+          <strong>F-Gas / CO₂e</strong>
+          <small>Charge × GWP → tCO₂e leak threshold</small>
+        </button>
+        <button class="tool-card" onclick="openTool('refsat')">
+          <span>📊</span>
+          <strong>Refrigerant Lookup</strong>
+          <small>P↔T saturation tables</small>
+        </button>
+      </section>
+    </details>
 
-    <h3 class="section-title">General Conversions</h3>
-    <section class="grid">
-      <button class="tool-card" onclick="openTool('pressure')">
-        <span>🧭</span>
-        <strong>Pressure</strong>
-        <small>Pa, mmH₂O, in.wg, kPa, bar, PSI</small>
-      </button>
-      <button class="tool-card" onclick="openTool('heat')">
-        <span>🔥❄️</span>
-        <strong>Heating / Cooling</strong>
-        <small>kW, BTU/hr, TR</small>
-      </button>
-      <button class="tool-card" onclick="openTool('room')">
-        <span>🏢</span>
-        <strong>Room / ACH</strong>
-        <small>Volume and air changes</small>
-      </button>
-    </section>
+    <details class="tool-section">
+      <summary>
+        <span class="tool-section-icon">⚡</span>
+        <span class="tool-section-title">Electrical</span>
+        <span class="tool-section-count">3</span>
+      </summary>
+      <section class="grid">
+        <button class="tool-card" onclick="openTool('ohm')">
+          <span>⚡</span>
+          <strong>Ohm &amp; 3-Phase</strong>
+          <small>V, I, R, P • single &amp; three phase</small>
+        </button>
+        <button class="tool-card" onclick="openTool('vdrop')">
+          <span>📏</span>
+          <strong>Voltage Drop</strong>
+          <small>Cable length • CSA • current</small>
+        </button>
+        <button class="tool-card" onclick="openTool('motor')">
+          <span>🔧</span>
+          <strong>Motor Heat Gain</strong>
+          <small>kW × (1 − η) • plant room load</small>
+        </button>
+      </section>
+    </details>
 
-    <h3 class="section-title">Diagnostics <span class="badge-site">Site mode</span></h3>
-    <section class="grid">
-      <button class="tool-card wide" onclick="openTool('explain')">
-        <span>🩺</span>
-        <strong>Explain My Readings</strong>
-        <small>Compare current vs design / previous • detect filter loading, blockage, dirty coil, damper drift</small>
-      </button>
-    </section>
+    <details class="tool-section">
+      <summary>
+        <span class="tool-section-icon">🧭</span>
+        <span class="tool-section-title">General Conversions</span>
+        <span class="tool-section-count">3</span>
+      </summary>
+      <section class="grid">
+        <button class="tool-card" onclick="openTool('pressure')">
+          <span>🧭</span>
+          <strong>Pressure</strong>
+          <small>Pa, mmH₂O, in.wg, kPa, bar, PSI</small>
+        </button>
+        <button class="tool-card" onclick="openTool('heat')">
+          <span>🔥❄️</span>
+          <strong>Heating / Cooling</strong>
+          <small>kW, BTU/hr, TR</small>
+        </button>
+        <button class="tool-card" onclick="openTool('room')">
+          <span>🏢</span>
+          <strong>Room / ACH</strong>
+          <small>Volume and air changes</small>
+        </button>
+      </section>
+    </details>
 
-    <h3 class="section-title">Explain It Simply</h3>
-    <section class="grid">
-      <button class="tool-card" onclick="openExplanation('duct_condensation')">
-        <span>💧</span>
-        <strong>Why ducts sweat</strong>
-        <small>Condensation, dew point, when to insulate</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('fan_laws')">
-        <span>🌀</span>
-        <strong>Fan laws (simple)</strong>
-        <small>Speed up a little, pay a lot</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('airflow_vs_resistance')">
-        <span>🚧</span>
-        <strong>Airflow vs resistance</strong>
-        <small>Why a faster fan doesn't always help</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('breaker_tripping')">
-        <span>⚡</span>
-        <strong>Why breakers trip</strong>
-        <small>Tracing the cause, not just resetting</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('pulley_changes')">
-        <span>⚙️</span>
-        <strong>Pulley changes</strong>
-        <small>Small change, big power impact</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('pipe_friction_explained')">
-        <span>🪈</span>
-        <strong>Pipe friction numbers</strong>
-        <small>Reading head loss, Pa/m, velocity in plain English</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('duct_friction_explained')">
-        <span>🌬️</span>
-        <strong>Duct friction numbers</strong>
-        <small>Pa/m, velocity bands, total run pressure</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('psychrometrics_basics')">
-        <span>💨</span>
-        <strong>Dry bulb, wet bulb, dew point</strong>
-        <small>Three temperatures that describe moist air</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('sensible_vs_latent')">
-        <span>♨️</span>
-        <strong>Sensible vs latent heat</strong>
-        <small>The two ways air carries energy</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('water_flow_kw_dt')">
-        <span>💧</span>
-        <strong>Water flow from kW &amp; ΔT</strong>
-        <small>Why ΔT choice is a big energy decision</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('superheat_subcool_explained')">
-        <span>❄️</span>
-        <strong>Superheat &amp; subcool</strong>
-        <small>Diagnosing a refrigeration circuit</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('fgas_regulations_explained')">
-        <span>🌍</span>
-        <strong>F-Gas leak-check rules</strong>
-        <small>Why charge size triggers different intervals</small>
-      </button>
-      <button class="tool-card" onclick="openExplanation('vdrop_bs7671_explained')">
-        <span>📏</span>
-        <strong>Voltage drop limits</strong>
-        <small>Why 3% lighting / 5% power matter</small>
-      </button>
-    </section>
+    <details class="tool-section">
+      <summary>
+        <span class="tool-section-icon">🩺</span>
+        <span class="tool-section-title">Diagnostics <span class="badge-site">Site mode</span></span>
+        <span class="tool-section-count">1</span>
+      </summary>
+      <section class="grid">
+        <button class="tool-card wide" onclick="openTool('explain')">
+          <span>🩺</span>
+          <strong>Explain My Readings</strong>
+          <small>Compare current vs design / previous • detect filter loading, blockage, dirty coil, damper drift</small>
+        </button>
+      </section>
+    </details>
+
+    <details class="tool-section">
+      <summary>
+        <span class="tool-section-icon">📖</span>
+        <span class="tool-section-title">Explain It Simply</span>
+        <span class="tool-section-count">13</span>
+      </summary>
+      <section class="grid">
+        <button class="tool-card" onclick="openExplanation('duct_condensation')">
+          <span>💧</span>
+          <strong>Why ducts sweat</strong>
+          <small>Condensation, dew point, when to insulate</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('fan_laws')">
+          <span>🌀</span>
+          <strong>Fan laws (simple)</strong>
+          <small>Speed up a little, pay a lot</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('airflow_vs_resistance')">
+          <span>🚧</span>
+          <strong>Airflow vs resistance</strong>
+          <small>Why a faster fan doesn't always help</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('breaker_tripping')">
+          <span>⚡</span>
+          <strong>Why breakers trip</strong>
+          <small>Tracing the cause, not just resetting</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('pulley_changes')">
+          <span>⚙️</span>
+          <strong>Pulley changes</strong>
+          <small>Small change, big power impact</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('pipe_friction_explained')">
+          <span>🪈</span>
+          <strong>Pipe friction numbers</strong>
+          <small>Reading head loss, Pa/m, velocity in plain English</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('duct_friction_explained')">
+          <span>🌬️</span>
+          <strong>Duct friction numbers</strong>
+          <small>Pa/m, velocity bands, total run pressure</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('psychrometrics_basics')">
+          <span>💨</span>
+          <strong>Dry bulb, wet bulb, dew point</strong>
+          <small>Three temperatures that describe moist air</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('sensible_vs_latent')">
+          <span>♨️</span>
+          <strong>Sensible vs latent heat</strong>
+          <small>The two ways air carries energy</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('water_flow_kw_dt')">
+          <span>💧</span>
+          <strong>Water flow from kW &amp; ΔT</strong>
+          <small>Why ΔT choice is a big energy decision</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('superheat_subcool_explained')">
+          <span>❄️</span>
+          <strong>Superheat &amp; subcool</strong>
+          <small>Diagnosing a refrigeration circuit</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('fgas_regulations_explained')">
+          <span>🌍</span>
+          <strong>F-Gas leak-check rules</strong>
+          <small>Why charge size triggers different intervals</small>
+        </button>
+        <button class="tool-card" onclick="openExplanation('vdrop_bs7671_explained')">
+          <span>📏</span>
+          <strong>Voltage drop limits</strong>
+          <small>Why 3% lighting / 5% power matter</small>
+        </button>
+      </section>
+    </details>
 
     <section id="toolPanel" class="panel hidden" aria-live="polite">
       <div class="panel-head">

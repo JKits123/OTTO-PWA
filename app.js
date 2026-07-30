@@ -65,6 +65,41 @@ const HW_C = {
   plastic: 150
 };
 
+/* Dry air specific heat, kJ/kg·K — used for air-side sensible heat (steam coil estimator) */
+const CP_AIR = 1.005;
+
+/* Saturated steam properties vs pressure (bar gauge). Key points, linear interpolation —
+   same approach as the refrigerant SAT table above. Source: standard saturated-steam
+   tables (bar-absolute values offset by 1.013 bar for gauge). Covers the LP/MP range
+   typical of building-services heating steam (0–10 bar g). */
+const STEAM_SAT = [
+  // [barg, Tsat °C, hfg kJ/kg, vg m³/kg]
+  [0.0,  100.0, 2257, 1.673],
+  [0.5,  110.9, 2226, 1.159],
+  [1.0,  120.4, 2201, 0.885],
+  [2.0,  133.7, 2163, 0.606],
+  [3.0,  143.8, 2133, 0.462],
+  [4.0,  152.1, 2107, 0.374],
+  [5.0,  158.9, 2085, 0.315],
+  [6.0,  165.0, 2065, 0.273],
+  [7.0,  170.5, 2047, 0.240],
+  [8.0,  175.5, 2030, 0.215],
+  [10.0, 184.4, 1999, 0.177]
+];
+function steamLookup(barg){
+  const t = STEAM_SAT;
+  const p = Math.max(t[0][0], Math.min(barg, t[t.length-1][0]));
+  for (let i = 0; i < t.length-1; i++){
+    const [p1,T1,H1,V1] = t[i], [p2,T2,H2,V2] = t[i+1];
+    if (p >= p1 && p <= p2){
+      const f = (p2 === p1) ? 0 : (p-p1)/(p2-p1);
+      return { Tsat: T1+(T2-T1)*f, hfg: H1+(H2-H1)*f, vg: V1+(V2-V1)*f };
+    }
+  }
+  const last = t[t.length-1];
+  return { Tsat: last[1], hfg: last[2], vg: last[3] };
+}
+
 /* ---------- DOM helpers ---------- */
 const panel      = document.getElementById("toolPanel");
 const panelTitle = document.getElementById("panelTitle");
@@ -110,6 +145,7 @@ const TOOLS = {
   water:     { title: "Water Flow",                html: waterHTML,      calc: calcWater },
   pipe:      { title: "Pipe Friction (Hazen-W)",   html: pipeHTML,       calc: calcPipe },
   expansion: { title: "Expansion Vessel & Pump",   html: expansionHTML,  calc: calcExpansion },
+  steam:     { title: "Steam Coil Estimator",      html: steamHTML,      calc: calcSteam },
   refcycle:  { title: "Superheat / Subcool",       html: refcycleHTML,   calc: calcRefCycle },
   fgas:      { title: "F-Gas / CO₂e",              html: fgasHTML,       calc: calcFgas },
   refsat:    { title: "Refrigerant Saturation",    html: refsatHTML,     calc: calcRefSat },
@@ -1187,6 +1223,117 @@ function calcExpansion(){
   if (!html) html = `<span class="bad">Fill in either the vessel section or the pump section to see results.</span>`;
   html += assumptionFooter("Vessel sizing per BS EN 12828 simplified (Boyle's Law on the gas side). Pump kW = ρ × g × Q × H ÷ η.");
   setResult("exOut", html);
+}
+
+/* ==========================================================================
+   HEATING / COILS
+   ========================================================================== */
+
+function steamHTML(){
+  return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('water_flow_kw_dt')">💡 Why ΔT matters</button>
+  </div>
+  <small class="muted">Fill in Method A (air-side) if you can get airflow and both temperatures — it's the most reliable. Use Method B (steam pipe) when air readings aren't available. Fill in both and OTTO will cross-check them.</small>
+  <fieldset>
+    <legend>Method A — Air-side (measured, recommended)</legend>
+    <div class="form-grid">
+      <div class="field"><label>Airflow (l/s)</label><input id="scQ" type="number" inputmode="decimal" placeholder="1500"></div>
+      <div class="field"><label>&nbsp;</label></div>
+      <div class="field"><label>Entering air T (°C)</label><input id="scTin" type="number" inputmode="decimal" placeholder="5"></div>
+      <div class="field"><label>Leaving air T (°C)</label><input id="scTout" type="number" inputmode="decimal" placeholder="25"></div>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Method B — Steam pipe capacity estimate</legend>
+    <div class="form-grid">
+      <div class="field"><label>Steam pressure (bar g)</label><input id="scP" type="number" inputmode="decimal" placeholder="2"></div>
+      <div class="field"><label>Pipe internal Ø (mm)</label><input id="scD" type="number" inputmode="decimal" placeholder="40"></div>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Coil face size (optional — face velocity check only)</legend>
+    <div class="form-grid">
+      <div class="field"><label>Coil width (mm)</label><input id="scW" type="number" inputmode="decimal" placeholder="900"></div>
+      <div class="field"><label>Coil height (mm)</label><input id="scH" type="number" inputmode="decimal" placeholder="600"></div>
+    </div>
+  </fieldset>
+  <div id="scOut" class="result muted">Estimate an existing steam coil's kW output from air-side readings (preferred) or from steam pressure + pipe size when air readings aren't available.</div>`;
+}
+
+function calcSteam(){
+  const qLs = n("scQ"), tin = n("scTin"), tout = n("scTout");
+  const barg = n("scP"), dMm = n("scD");
+  const wMm = n("scW"), hMm = n("scH");
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+
+  const hasAir   = qLs > 0 && tout > tin;
+  const hasSteam = dMm > 0 && v("scP") !== "";
+
+  if (!hasAir && !hasSteam){
+    setResult("scOut", `<span class="bad">Enter either Method A (airflow + entering/leaving temps) or Method B (steam pressure + pipe diameter).</span>`);
+    return;
+  }
+
+  let html = "";
+  let qAir = null, qLow = null, qHigh = null;
+
+  if (hasAir){
+    qAir = RHO_AIR * (qLs/1000) * CP_AIR * (tout - tin);
+    html += `<h4>Headline — Method A (air-side, measured)</h4>
+      Estimated output: <strong>${fmtSmart(qAir)} kW</strong> &nbsp;<span class="badge badge-good">High confidence</span><br>
+      <small class="muted">A direct sensible-heat measurement from real airflow and temperature readings — the most reliable figure OTTO can give. Confirm both temperatures were read at steady state (fan running normally, not just after start-up) and that the thermometer wasn't in direct sun/draught.</small><br>
+      <small class="muted">Q = ρ<sub>air</sub> × V × cp<sub>air</sub> × ΔT = 1.2 × ${fmtSmart(qLs/1000)} m³/s × 1.005 × ${fmtSmart(tout-tin)} K</small><br><br>`;
+  }
+
+  let sat = null;
+  if (hasSteam){
+    sat = steamLookup(barg);
+    const area = Math.PI * Math.pow((dMm/1000)/2, 2);
+    const rhoSteam = 1/sat.vg;
+    qLow  = rhoSteam * 15 * area * sat.hfg;
+    qHigh = rhoSteam * 30 * area * sat.hfg;
+    html += `<h4>${hasAir ? "Cross-check" : "Headline"} — Method B (steam pipe capacity estimate)</h4>
+      Estimated range: <strong>${fmtSmart(qLow)}–${fmtSmart(qHigh)} kW</strong> &nbsp;<span class="badge badge-warn">Medium confidence — a ceiling, not a measurement</span><br>
+      <small class="muted">This is what a ${fmtSmart(dMm)} mm pipe at ${fmtSmart(barg)} bar g <em>could</em> deliver at typical safe steam velocities for equipment branch connections (15–30 m/s) — it's the pipework's capacity ceiling, not what the coil is actually doing right now. Actual duty also depends on the control valve position, trap condition, and how the coil itself was originally sized, none of which pipe size alone can tell you.</small><br>
+      <small class="muted">Steam at ${fmtSmart(barg)} bar g saturates at ${fmtSmart(sat.Tsat)} °C, h<sub>fg</sub> ${fmtSmart(sat.hfg)} kJ/kg, specific volume ${fmt(sat.vg,3)} m³/kg.</small><br><br>`;
+  }
+
+  if (hasAir && hasSteam){
+    if (qAir < qLow * 0.5){
+      html += `<span class="badge badge-warn">Air-side reading is well below pipe capacity</span>
+        <small class="muted"> The coil is delivering much less than the pipe could supply. Check for a failed/undersized steam trap, a throttled or stuck control valve, fouled coil fins, or air bypassing the coil.</small><br><br>`;
+    } else if (qAir > qHigh * 1.15){
+      html += `<span class="badge badge-bad">Air-side reading exceeds the pipe's estimated ceiling</span>
+        <small class="muted"> That's physically inconsistent with the stated pipe size/pressure — re-check the pipe diameter, the pressure gauge reading, and the air temperatures before relying on this figure.</small><br><br>`;
+    } else {
+      html += `<span class="badge badge-good">Air-side reading is consistent with pipe capacity</span>
+        <small class="muted"> The measured output sits within the plausible range for this pipe size and pressure.</small><br><br>`;
+    }
+  }
+
+  if (wMm > 0 && hMm > 0 && qLs > 0){
+    const faceArea = (wMm/1000)*(hMm/1000);
+    const vFace = (qLs/1000)/faceArea;
+    let fvStatus, fvText, fvAdvice;
+    if (vFace < 1.5)       { fvStatus = "info"; fvText = "Low face velocity";        fvAdvice = "Below the typical 2–3 m/s coil design band — coil may be oversized for this airflow, or airflow itself is reduced (check filter/fan)."; }
+    else if (vFace <= 3.0) { fvStatus = "good"; fvText = "Typical coil face velocity"; fvAdvice = "Within the usual 2–3 m/s heating-coil design band."; }
+    else if (vFace <= 4.0) { fvStatus = "warn"; fvText = "High face velocity";        fvAdvice = "Approaching the upper limit — worth sense-checking the coil size and airflow figure."; }
+    else                    { fvStatus = "bad";  fvText = "Very high face velocity";  fvAdvice = "Well above typical design — sense-check the coil dimensions and airflow figure before trusting either."; }
+    html += `<h4>Coil face velocity check</h4>
+      <strong>${fmtSmart(vFace)} m/s</strong> &nbsp;<span class="badge ${badgeMap[fvStatus]}">${fvText}</span><br>
+      <small class="muted">${fvAdvice} Face area ${fmtSmart(faceArea)} m² (${fmtSmart(wMm)}×${fmtSmart(hMm)} mm). This is a sense-check on whether the airflow figure is plausible for this coil size — it does not feed into the kW estimate above.</small><br><br>`;
+  }
+
+  html += `<h4>Replacement guidance</h4>
+    <small class="muted">Don't quote a replacement to the bare calculated figure — allow margin above it for fouling over the coil's service life, and for the fact that a steam coil's actual duty varies with control-valve modulation, not just the pipe's maximum. Confirm the design entering-air temperature (worst-case winter, not today's reading) before finalising a replacement duty.</small><br><br>
+    <h4>Follow-up checks</h4>
+    <small class="muted">• Confirm the steam trap isn't failed open or shut — a failed trap makes both methods misleading<br>
+    • Check for a strainer or control valve partially closed, limiting delivered steam below pipe capacity<br>
+    • If replacing, get the existing coil's nameplate or schedule data if it still exists — this is a field workaround, not a substitute for manufacturer data</small>`;
+
+  html += assumptionFooter("Method A: Q = ρ_air × V × cp_air × ΔT (ρ = 1.2 kg/m³, cp = 1.005 kJ/kg·K), sensible heat only. Method B: ṁ = ρ_steam × velocity × pipe area, Q = ṁ × h_fg, evaluated at 15–30 m/s (typical safe range for LP/MP steam branch and equipment connections). Saturated steam properties from standard steam tables, key points with linear interpolation — same approach as the refrigerant saturation table elsewhere in OTTO. Both methods are estimates for field decision support, not a substitute for manufacturer coil data.");
+  setResult("scOut", html);
 }
 
 /* ==========================================================================

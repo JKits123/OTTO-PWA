@@ -310,6 +310,56 @@ footer{
   color:var(--muted);
   font-size:13px;
 }
+/* ---------- Collapsible tool sections ---------- */
+.tool-section{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  margin:14px 0;
+  box-shadow:0 8px 22px rgba(15,23,42,.05);
+}
+.tool-section > summary{
+  list-style:none;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:16px;
+  -webkit-user-select:none;
+  user-select:none;
+}
+.tool-section > summary::-webkit-details-marker{display:none}
+.tool-section > summary::after{
+  content:"▸";
+  margin-left:auto;
+  color:var(--muted);
+  font-size:14px;
+  transition:transform .15s;
+}
+.tool-section[open] > summary::after{transform:rotate(90deg)}
+.tool-section-icon{font-size:20px}
+.tool-section-title{
+  font-weight:800;
+  font-size:13px;
+  text-transform:uppercase;
+  letter-spacing:1.2px;
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.tool-section-count{
+  background:var(--soft);
+  color:var(--muted);
+  font-size:11px;
+  font-weight:800;
+  padding:2px 9px;
+  border-radius:999px;
+}
+.tool-section > .grid{
+  padding:0 16px 16px;
+}
+
 /* ---------- Explanation Engine (Phase 1) ---------- */
 .explain-card{
   margin:0;
