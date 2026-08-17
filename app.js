@@ -842,30 +842,54 @@ function offsetHTML(){
 function offsetInit(){ renderOffset(); }
 function calcOffset(){ renderOffset(); }
 
-/* Rebuilds #offsetBody from a fresh HTML string (the wizard re-renders on every
-   answer) while keeping keyboard focus on whichever input the user is typing
-   into — innerHTML replacement destroys and recreates every input element, so
-   without this a re-render mid-keystroke drops focus and the user has to
-   click back into the box after every character. */
+/* Rebuilds #offsetBody from a fresh HTML string (the wizard re-renders on
+   every answer). A naive `body.innerHTML = html` destroys and recreates every
+   input element on every keystroke, which — on real devices — doesn't just
+   drop focus, it disconnects the on-screen keyboard's edit session from the
+   (now-different) DOM node; refocusing the replacement node afterward can't
+   reliably restore cursor position on `type="number"` inputs (no selection
+   API) and on some browsers resets the caret to position 0, so every new
+   character gets inserted at the START of the value instead of the end
+   (typing "875" renders as "578").
+   The real fix is to never replace the input the user is actively typing
+   into: #offsetBody's markup is a flat list of top-level sibling blocks (one
+   per question), so this finds the top-level block that currently contains
+   the focused input, leaves it and everything before it completely
+   untouched in the live DOM, and only swaps in the new blocks that come
+   after it — the blocks that actually change as a result of the value just
+   typed (e.g. the jointing-method step appearing once a value is entered).
+   Falls back to a full replace when the field's own position in the tree
+   has changed too much to match (a structural change, e.g. switching shape
+   — never triggered by ordinary typing). */
 function offsetSetBodyHTML(html){
   const body = $("offsetBody");
   if (!body) return;
   const active = document.activeElement;
-  const wasFocused = active && body.contains(active) && active.id;
-  let selStart = null, selEnd = null;
-  if (wasFocused){
-    try { selStart = active.selectionStart; selEnd = active.selectionEnd; } catch(e){ /* type=number: selection API unsupported */ }
+  const isLiveInput = active && body.contains(active) && active.id &&
+    (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+
+  if (!isLiveInput){
+    body.innerHTML = html;
+    return;
   }
-  body.innerHTML = html;
-  if (wasFocused){
+
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+
+  const liveChildren = Array.from(body.children);
+  const newChildren = Array.from(tmp.children);
+  const liveIdx = liveChildren.findIndex(el => el.contains(active));
+  const newIdx = newChildren.findIndex(el => el.querySelector && el.querySelector("#" + active.id));
+
+  if (liveIdx === -1 || newIdx === -1){
+    body.innerHTML = html;
     const el = document.getElementById(active.id);
-    if (el){
-      el.focus();
-      if (selStart != null && el.setSelectionRange){
-        try { el.setSelectionRange(selStart, selEnd); } catch(e){ /* type=number: selection API unsupported */ }
-      }
-    }
+    if (el) el.focus();
+    return;
   }
+
+  for (let k = liveChildren.length - 1; k > liveIdx; k--) body.removeChild(liveChildren[k]);
+  for (let k = newIdx + 1; k < newChildren.length; k++) body.appendChild(newChildren[k]);
 }
 
 function offsetSetShape(shape){
