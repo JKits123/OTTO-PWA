@@ -825,9 +825,12 @@ function rBadge(r){
 }
 
 /* ---------- Duct Offset Calculator (guided, one question at a time) ---------- */
+const OFFSET_PRESETS = [30, 45, 60, 90];
 const OFFSET_STATE = {
-  shape: null, angle: null,
+  shape: null, mode: null,
+  angle: null,
   knownKey: null, knownVal: null,
+  checkCC: null, checkE: null,
   joint: null, slipCount: null,
   width: null, depth: null, clearance: null
 };
@@ -839,9 +842,43 @@ function offsetHTML(){
 function offsetInit(){ renderOffset(); }
 function calcOffset(){ renderOffset(); }
 
+/* Rebuilds #offsetBody from a fresh HTML string (the wizard re-renders on every
+   answer) while keeping keyboard focus on whichever input the user is typing
+   into — innerHTML replacement destroys and recreates every input element, so
+   without this a re-render mid-keystroke drops focus and the user has to
+   click back into the box after every character. */
+function offsetSetBodyHTML(html){
+  const body = $("offsetBody");
+  if (!body) return;
+  const active = document.activeElement;
+  const wasFocused = active && body.contains(active) && active.id;
+  let selStart = null, selEnd = null;
+  if (wasFocused){
+    try { selStart = active.selectionStart; selEnd = active.selectionEnd; } catch(e){ /* type=number: selection API unsupported */ }
+  }
+  body.innerHTML = html;
+  if (wasFocused){
+    const el = document.getElementById(active.id);
+    if (el){
+      el.focus();
+      if (selStart != null && el.setSelectionRange){
+        try { el.setSelectionRange(selStart, selEnd); } catch(e){ /* type=number: selection API unsupported */ }
+      }
+    }
+  }
+}
+
 function offsetSetShape(shape){
   OFFSET_STATE.shape = shape;
   if (shape !== "rect"){ OFFSET_STATE.width = null; OFFSET_STATE.depth = null; OFFSET_STATE.clearance = null; }
+  renderOffset();
+}
+function offsetSetMode(mode){
+  OFFSET_STATE.mode = mode;
+  OFFSET_STATE.angle = null;
+  OFFSET_STATE.knownKey = null; OFFSET_STATE.knownVal = null;
+  OFFSET_STATE.checkCC = null; OFFSET_STATE.checkE = null;
+  OFFSET_STATE.joint = null; OFFSET_STATE.slipCount = null;
   renderOffset();
 }
 function offsetSetAngle(angle){
@@ -857,6 +894,16 @@ function offsetSetKnown(key){
 function offsetKnownInput(){
   const val = parseFloat($("offsetKnownVal")?.value);
   OFFSET_STATE.knownVal = (Number.isFinite(val) && val > 0) ? val : null;
+  renderOffset();
+}
+function offsetCheckCCInput(){
+  const val = parseFloat($("offsetCheckCC")?.value);
+  OFFSET_STATE.checkCC = (Number.isFinite(val) && val > 0) ? val : null;
+  renderOffset();
+}
+function offsetCheckEInput(){
+  const val = parseFloat($("offsetCheckE")?.value);
+  OFFSET_STATE.checkE = (Number.isFinite(val) && val >= 0) ? val : null;
   renderOffset();
 }
 function offsetSetJoint(joint){
@@ -936,11 +983,32 @@ function renderOffset(){
     </div>`;
 
   if (!s.shape){
-    $("offsetBody").innerHTML = html;
+    offsetSetBodyHTML(html);
     setResult("offsetOut", `<span class="muted">Pick a duct shape to start.</span>`);
     return;
   }
 
+  html += `<div class="offset-step-label">How do you want to work this out?</div>
+    <div class="offset-choice-row">
+      <button type="button" class="offset-choice-btn ${s.mode==='angle'?'active':''}" onclick="offsetSetMode('angle')">
+        <span class="oc-icon">📐</span><span>Pick a standard bend angle<small>30° / 45° / 60° / 90° — then tell OTTO one measurement</small></span>
+      </button>
+      <button type="button" class="offset-choice-btn ${s.mode==='check'?'active':''}" onclick="offsetSetMode('check')">
+        <span class="oc-icon">📍</span><span>I already have both fixed points<small>e.g. two pre-set flanges — OTTO checks whether a standard bend connects them</small></span>
+      </button>
+    </div>`;
+
+  if (!s.mode){
+    offsetSetBodyHTML(html);
+    setResult("offsetOut", `<span class="muted">Pick how you want to work this out.</span>`);
+    return;
+  }
+
+  if (s.mode === "check") renderOffsetCheckMode(s, html);
+  else renderOffsetAngleMode(s, html);
+}
+
+function renderOffsetAngleMode(s, html){
   html += `<div class="offset-step-label">Offset angle</div>
     <div class="offset-angle-grid">${[30,45,60,90].map(a => `
       <button type="button" class="offset-angle-btn ${s.angle===a?'active':''}" onclick="offsetSetAngle(${a})">
@@ -948,7 +1016,7 @@ function renderOffset(){
       </button>`).join("")}</div>`;
 
   if (!s.angle){
-    $("offsetBody").innerHTML = html;
+    offsetSetBodyHTML(html);
     setResult("offsetOut", `<span class="muted">Pick the bend angle to continue.</span>`);
     return;
   }
@@ -975,7 +1043,7 @@ function renderOffset(){
   }
 
   if (!s.knownKey || !(s.knownVal > 0)){
-    $("offsetBody").innerHTML = html;
+    offsetSetBodyHTML(html);
     setResult("offsetOut", `<span class="muted">Answer the question above to continue.</span>`);
     return;
   }
@@ -988,6 +1056,64 @@ function renderOffset(){
   if (Math.abs(CC) < 1e-6) CC = 0;
   if (Math.abs(E)  < 1e-6) E  = 0;
 
+  renderOffsetDownstream(s, html, s.angle, L, CC, E, "");
+}
+
+/* "I already have both fixed points" mode — CC and E are both real, measured
+   distances (e.g. two flanges already fixed on site), not derived from a
+   chosen angle. Works out the angle those two distances imply and checks it
+   against the standard 30/45/60/90° presets before it will produce a cut
+   length — a mismatched angle can't be fixed by any cut length. */
+function renderOffsetCheckMode(s, html){
+  html += `<div class="offset-step-label">Sideways move</div>
+    <div class="field full"><label>How far does the duct need to move sideways? (mm)</label>
+      <input id="offsetCheckCC" type="number" inputmode="decimal" placeholder="e.g. 300" value="${s.checkCC ?? ''}" oninput="offsetCheckCCInput()"></div>`;
+
+  if (!(s.checkCC > 0)){
+    offsetSetBodyHTML(html);
+    setResult("offsetOut", `<span class="muted">Enter the sideways distance between the two fixed points to continue.</span>`);
+    return;
+  }
+
+  html += `<div class="offset-step-label">Forward travel</div>
+    <div class="field full"><label>How far forward does the offset need to travel? (mm)</label>
+      <input id="offsetCheckE" type="number" inputmode="decimal" placeholder="e.g. 300" value="${s.checkE ?? ''}" oninput="offsetCheckEInput()"></div>`;
+
+  if (s.checkE == null){
+    offsetSetBodyHTML(html);
+    setResult("offsetOut", `<span class="muted">Enter the forward distance between the two fixed points to continue.</span>`);
+    return;
+  }
+
+  const CC = s.checkCC, E = s.checkE;
+  const angleDeg = Math.atan2(CC, E) * 180/Math.PI;
+
+  if (angleDeg < 1){
+    offsetSetBodyHTML(html);
+    setResult("offsetOut", `<span class="badge badge-good">Already in line</span> <small class="muted"> These two points barely move sideways relative to each other (${fmtSmart(angleDeg)}°) — no bend needed, just run the duct straight between them.</small>`);
+    return;
+  }
+
+  const matched = OFFSET_PRESETS.find(p => Math.abs(p - angleDeg) <= 1);
+
+  if (!matched){
+    offsetSetBodyHTML(html);
+    const L = Math.sqrt(CC*CC + E*E);
+    setResult("offsetOut", `<span class="badge badge-bad">No standard bend connects these points</span>
+      <small class="muted"> Those two fixed points need a <strong>${fmtSmart(angleDeg)}°</strong> bend to line up — that's not a standard 30°/45°/60°/90° offset. A single diagonal cut piece between two off-the-shelf bends won't reach both points; no cut length can fix a mismatched angle. Options: source a bend actually rated at ${fmtSmart(angleDeg)}°, move one of the fixed points, or split the offset into two stages.</small>` +
+      offsetDiagramBlock("Diagram (actual angle — not a standard bend)", angleDeg, s.shape, L, CC, E, s.width, s.depth));
+    return;
+  }
+
+  const L = Math.sqrt(CC*CC + E*E);
+  const matchNote = `<span class="badge badge-good">Matches a standard ${matched}° offset</span> <small class="muted"> Calculated angle: ${fmtSmart(angleDeg)}° — close enough to a standard ${matched}° bend (within 1°).</small><br><br>`;
+  renderOffsetDownstream(s, html, matched, L, CC, E, matchNote);
+}
+
+/* Shared tail once L/CC/E are known, regardless of which mode produced them:
+   jointing method -> rect dims/fit check -> result. matchNote (check mode
+   only) is prepended to the output once it's reached. */
+function renderOffsetDownstream(s, html, angleForDiagram, L, CC, E, matchNote){
   html += `<div class="offset-step-label">How will the cut piece be jointed?</div>
     <div class="offset-choice-row">
       <button type="button" class="offset-choice-btn ${s.joint==='flange'?'active':''}" onclick="offsetSetJoint('flange')">
@@ -1008,8 +1134,8 @@ function renderOffset(){
 
   const jointReady = s.joint === "flange" || s.joint === "spiral" || (s.joint === "slip" && s.slipCount > 0);
   if (!jointReady){
-    $("offsetBody").innerHTML = html;
-    setResult("offsetOut", `<span class="muted">Pick how the piece will be jointed to continue.</span>`);
+    offsetSetBodyHTML(html);
+    setResult("offsetOut", matchNote + `<span class="muted">Pick how the piece will be jointed to continue.</span>`);
     return;
   }
 
@@ -1020,8 +1146,8 @@ function renderOffset(){
         <div class="field"><label>Duct depth (mm)</label><input id="offsetDimdepth" type="number" inputmode="decimal" placeholder="200" value="${s.depth ?? ''}" oninput="offsetDimInput('depth')"></div>
       </div>`;
     if (!(s.width > 0 && s.depth > 0)){
-      $("offsetBody").innerHTML = html;
-      setResult("offsetOut", `<span class="muted">Enter the duct width and depth to continue.</span>`);
+      offsetSetBodyHTML(html);
+      setResult("offsetOut", matchNote + `<span class="muted">Enter the duct width and depth to continue.</span>`);
       return;
     }
     html += `<div class="field full"><label>Clear space available (mm) — optional</label>
@@ -1035,7 +1161,7 @@ function renderOffset(){
   else                          { allowance = -80;               jointLabel = "spiral male/female, −80 mm"; }
   const finalCut = L + allowance;
 
-  let out = `<div class="offset-step-label">Result</div>
+  let out = matchNote + `<div class="offset-step-label">Result</div>
     <div class="offset-headline">${fmtSmart(finalCut)} mm</div>
     <small class="muted">Diagonal cut length for this piece, joint allowance included (${jointLabel}).</small><br><br>
     <h4>For reference</h4>
@@ -1059,11 +1185,11 @@ function renderOffset(){
       <small class="muted">Duct's largest side is ${fmtSmart(governing)} mm against ${fmtSmart(s.clearance)} mm of clear space.</small><br>`;
   }
 
-  out += offsetDiagramBlock("Diagram", s.angle, s.shape, L, CC, E, s.width, s.depth);
+  out += offsetDiagramBlock("Diagram", angleForDiagram, s.shape, L, CC, E, s.width, s.depth);
   out += assumptionFooter("CC = L·sin(θ), E = L·cos(θ) for two equal bends of angle θ. Joint allowances: mezz/flange +10 mm, slip joint +25 mm per joint, spiral male/female −80 mm. Figures are for the diagonal cut piece only — always confirm against the actual fitting/spigot depths where they differ from these standard allowances.");
 
   setResult("offsetOut", out);
-  $("offsetBody").innerHTML = html;
+  offsetSetBodyHTML(html);
 }
 
 /* ---------- Duct Friction (Darcy-Weisbach + Colebrook) ---------- */
