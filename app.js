@@ -146,6 +146,7 @@ const TOOLS = {
   pipe:      { title: "Pipe Friction (Hazen-W)",   html: pipeHTML,       calc: calcPipe },
   expansion: { title: "Expansion Vessel & Pump",   html: expansionHTML,  calc: calcExpansion },
   steam:     { title: "Steam Coil Estimator",      html: steamHTML,      calc: calcSteam },
+  offset:    { title: "Duct Offset Calculator",    html: offsetHTML,     calc: calcOffset, init: offsetInit },
   refcycle:  { title: "Superheat / Subcool",       html: refcycleHTML,   calc: calcRefCycle },
   fgas:      { title: "F-Gas / CO₂e",              html: fgasHTML,       calc: calcFgas },
   refsat:    { title: "Refrigerant Saturation",    html: refsatHTML,     calc: calcRefSat },
@@ -821,6 +822,248 @@ function rBadge(r){
   if (r < 1)    return `<span class="badge badge-good">Economical</span>`;
   if (r < 2.5)  return `<span class="badge badge-warn">Acceptable</span>`;
   return `<span class="badge badge-bad">High loss — uprate size</span>`;
+}
+
+/* ---------- Duct Offset Calculator (guided, one question at a time) ---------- */
+const OFFSET_STATE = {
+  shape: null, angle: null,
+  knownKey: null, knownVal: null,
+  joint: null, slipCount: null,
+  width: null, depth: null, clearance: null
+};
+
+function offsetHTML(){
+  return `<div id="offsetBody"></div>
+  <div id="offsetOut" class="result muted">Work through the questions above — the cut length appears here once everything's answered.</div>`;
+}
+function offsetInit(){ renderOffset(); }
+function calcOffset(){ renderOffset(); }
+
+function offsetSetShape(shape){
+  OFFSET_STATE.shape = shape;
+  if (shape !== "rect"){ OFFSET_STATE.width = null; OFFSET_STATE.depth = null; OFFSET_STATE.clearance = null; }
+  renderOffset();
+}
+function offsetSetAngle(angle){
+  OFFSET_STATE.angle = angle;
+  if (angle === 90 && OFFSET_STATE.knownKey === "e"){ OFFSET_STATE.knownKey = null; OFFSET_STATE.knownVal = null; }
+  renderOffset();
+}
+function offsetSetKnown(key){
+  OFFSET_STATE.knownKey = key;
+  OFFSET_STATE.knownVal = null;
+  renderOffset();
+}
+function offsetKnownInput(){
+  const val = parseFloat($("offsetKnownVal")?.value);
+  OFFSET_STATE.knownVal = (Number.isFinite(val) && val > 0) ? val : null;
+  renderOffset();
+}
+function offsetSetJoint(joint){
+  OFFSET_STATE.joint = joint;
+  if (joint !== "slip") OFFSET_STATE.slipCount = null;
+  renderOffset();
+}
+function offsetSlipInput(){
+  const val = parseInt($("offsetSlipCount")?.value, 10);
+  OFFSET_STATE.slipCount = (Number.isFinite(val) && val > 0) ? val : null;
+  renderOffset();
+}
+function offsetDimInput(key){
+  const val = parseFloat($("offsetDim" + key)?.value);
+  OFFSET_STATE[key] = (Number.isFinite(val) && val > 0) ? val : null;
+  renderOffset();
+}
+function offsetClearanceInput(){
+  const val = parseFloat($("offsetClearance")?.value);
+  OFFSET_STATE.clearance = (Number.isFinite(val) && val > 0) ? val : null;
+  renderOffset();
+}
+
+function offsetAngleIcon(angle){
+  const rad = angle * Math.PI/180, run = 13, diag = 15;
+  const x0=4, y0=27, x1=x0+run, y1=y0, x2=x1+diag*Math.cos(rad), y2=y1-diag*Math.sin(rad), x3=x2+run, y3=y2;
+  return `<svg viewBox="0 0 60 34" width="44" height="25">
+    <polyline points="${x0},${y0} ${x1},${y1} ${x2.toFixed(1)},${y2.toFixed(1)} ${x3.toFixed(1)},${y3.toFixed(1)}" fill="none" stroke="#64748b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+function offsetDiagramSVG(angle, shape, L, CC, E, width, depth){
+  const rad = angle * Math.PI/180, runPx = 60, diagPx = 85;
+  const dx = diagPx*Math.cos(rad), dy = diagPx*Math.sin(rad);
+  const x0 = 34, y0 = 160;
+  const x1 = x0+runPx, y1 = y0;
+  const x2 = x1+dx, y2 = y1-dy;
+  const x3 = x2+runPx, y3 = y2;
+  const midX = (x1+x2)/2, midY = (y1+y2)/2;
+  const Ltxt  = Number.isFinite(L)  ? `L = ${fmtSmart(L)} mm`  : "L";
+  const CCtxt = Number.isFinite(CC) ? `CC = ${fmtSmart(CC)} mm` : "CC";
+  const Etxt  = Number.isFinite(E)  ? `E = ${fmtSmart(E)} mm`  : "E";
+  const dTxt = shape === "rect"
+    ? ((Number.isFinite(width) && Number.isFinite(depth)) ? `${fmtSmart(width)}×${fmtSmart(depth)} mm` : "W × D")
+    : "Ø d₁";
+  return `
+  <svg viewBox="0 0 320 220" class="offset-diagram" preserveAspectRatio="xMidYMid meet">
+    <polyline points="${x0},${y0} ${x1},${y1} ${x2.toFixed(1)},${y2.toFixed(1)} ${x3.toFixed(1)},${y3.toFixed(1)}" fill="none" stroke="#cbd5e1" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="${x0},${y0} ${x1},${y1} ${x2.toFixed(1)},${y2.toFixed(1)} ${x3.toFixed(1)},${y3.toFixed(1)}" fill="none" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <circle cx="${x1}" cy="${y1}" r="4.5" fill="#fff" stroke="#15803d" stroke-width="2"/>
+    <circle cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="4.5" fill="#fff" stroke="#15803d" stroke-width="2"/>
+    <text x="${x1-4}" y="${y1+18}" font-size="10" fill="#64748b" text-anchor="end">R</text>
+    <text x="${(x2+4).toFixed(1)}" y="${(y2-8).toFixed(1)}" font-size="10" fill="#64748b" text-anchor="start">R</text>
+    <text x="${midX.toFixed(1)}" y="${(midY-10).toFixed(1)}" font-size="12" font-weight="700" fill="#0f172a" text-anchor="middle">${Ltxt}</text>
+    <line x1="${x1}" y1="${y0+22}" x2="${x2.toFixed(1)}" y2="${y0+22}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3 3"/>
+    <line x1="${x1}" y1="${y0+16}" x2="${x1}" y2="${y0+28}" stroke="#0f172a" stroke-width="1"/>
+    <line x1="${x2.toFixed(1)}" y1="${y0+16}" x2="${x2.toFixed(1)}" y2="${y0+28}" stroke="#0f172a" stroke-width="1"/>
+    <text x="${((x1+x2)/2).toFixed(1)}" y="${y0+40}" font-size="12" font-weight="700" fill="#0f172a" text-anchor="middle">${Etxt}</text>
+    <line x1="${(x2+20).toFixed(1)}" y1="${y1}" x2="${(x2+20).toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#0f172a" stroke-width="1" stroke-dasharray="3 3"/>
+    <line x1="${(x2+14).toFixed(1)}" y1="${y1}" x2="${(x2+26).toFixed(1)}" y2="${y1}" stroke="#0f172a" stroke-width="1"/>
+    <line x1="${(x2+14).toFixed(1)}" y1="${y2.toFixed(1)}" x2="${(x2+26).toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#0f172a" stroke-width="1"/>
+    <text x="${(x2+32).toFixed(1)}" y="${((y1+y2)/2).toFixed(1)}" font-size="12" font-weight="700" fill="#0f172a" text-anchor="start" dominant-baseline="middle">${CCtxt}</text>
+    <text x="${x0}" y="${y0-14}" font-size="11" font-weight="700" fill="#0f172a" text-anchor="start">${dTxt}</text>
+    <line x1="${x0}" y1="${y0-10}" x2="${x0+18}" y2="${y0-2}" stroke="#64748b" stroke-width="1"/>
+  </svg>`;
+}
+function offsetDiagramBlock(heading, angle, shape, L, CC, E, width, depth){
+  return `<div class="offset-step-label">${heading}</div>${offsetDiagramSVG(angle, shape, L, CC, E, width, depth)}`;
+}
+
+function renderOffset(){
+  const s = OFFSET_STATE;
+  let html = `<div class="offset-step-label">Duct shape</div>
+    <div class="duct-shape-tabs" role="tablist">
+      <button type="button" class="ds-tab ${s.shape==='round'?'active':''}" onclick="offsetSetShape('round')">⭕ Round</button>
+      <button type="button" class="ds-tab ${s.shape==='rect'?'active':''}" onclick="offsetSetShape('rect')">▭ Rectangular</button>
+    </div>`;
+
+  if (!s.shape){
+    $("offsetBody").innerHTML = html;
+    setResult("offsetOut", `<span class="muted">Pick a duct shape to start.</span>`);
+    return;
+  }
+
+  html += `<div class="offset-step-label">Offset angle</div>
+    <div class="offset-angle-grid">${[30,45,60,90].map(a => `
+      <button type="button" class="offset-angle-btn ${s.angle===a?'active':''}" onclick="offsetSetAngle(${a})">
+        ${offsetAngleIcon(a)}<strong>${a}°</strong>
+      </button>`).join("")}</div>`;
+
+  if (!s.angle){
+    $("offsetBody").innerHTML = html;
+    setResult("offsetOut", `<span class="muted">Pick the bend angle to continue.</span>`);
+    return;
+  }
+  html += offsetDiagramBlock("Bend diagram", s.angle, s.shape, null, null, null, null, null);
+
+  const eDisabled = s.angle === 90;
+  html += `<div class="offset-step-label">What do you know?</div>
+    <div class="offset-choice-row">
+      <button type="button" class="offset-choice-btn ${s.knownKey==='cc'?'active':''}" onclick="offsetSetKnown('cc')">
+        <span class="oc-icon">↔️</span><span>How far does the duct need to move sideways?</span>
+      </button>
+      <button type="button" class="offset-choice-btn ${s.knownKey==='l'?'active':''}" onclick="offsetSetKnown('l')">
+        <span class="oc-icon">📏</span><span>How much space have you got to run diagonally?</span>
+      </button>
+      <button type="button" class="offset-choice-btn ${s.knownKey==='e'?'active':''}" ${eDisabled?'disabled':''} onclick="${eDisabled?'':"offsetSetKnown('e')"}">
+        <span class="oc-icon">↗️</span><span>How far forward does the offset need to travel?${eDisabled?'<small>Not used at 90° — there’s no forward travel to measure</small>':''}</span>
+      </button>
+    </div>`;
+
+  if (s.knownKey){
+    const label = s.knownKey==='cc' ? "Sideways move (mm)" : s.knownKey==='l' ? "Diagonal space available (mm)" : "Forward travel (mm)";
+    html += `<div class="field full"><label>${label}</label>
+      <input id="offsetKnownVal" type="number" inputmode="decimal" placeholder="e.g. 300" value="${s.knownVal ?? ''}" oninput="offsetKnownInput()"></div>`;
+  }
+
+  if (!s.knownKey || !(s.knownVal > 0)){
+    $("offsetBody").innerHTML = html;
+    setResult("offsetOut", `<span class="muted">Answer the question above to continue.</span>`);
+    return;
+  }
+
+  const rad = s.angle * Math.PI/180;
+  let L, CC, E;
+  if (s.knownKey === "cc"){ CC = s.knownVal; L = CC/Math.sin(rad); E = L*Math.cos(rad); }
+  else if (s.knownKey === "l"){ L = s.knownVal; CC = L*Math.sin(rad); E = L*Math.cos(rad); }
+  else { E = s.knownVal; L = E/Math.cos(rad); CC = L*Math.sin(rad); }
+  if (Math.abs(CC) < 1e-6) CC = 0;
+  if (Math.abs(E)  < 1e-6) E  = 0;
+
+  html += `<div class="offset-step-label">How will the cut piece be jointed?</div>
+    <div class="offset-choice-row">
+      <button type="button" class="offset-choice-btn ${s.joint==='flange'?'active':''}" onclick="offsetSetJoint('flange')">
+        <span class="oc-icon">🔩</span><span>Mezz / flange joint (butted)<small>Adds 10 mm to the cut length</small></span>
+      </button>
+      <button type="button" class="offset-choice-btn ${s.joint==='slip'?'active':''}" onclick="offsetSetJoint('slip')">
+        <span class="oc-icon">🧲</span><span>Slip joint<small>Adds 25 mm per joint in this run</small></span>
+      </button>
+      <button type="button" class="offset-choice-btn ${s.joint==='spiral'?'active':''}" onclick="offsetSetJoint('spiral')">
+        <span class="oc-icon">🌀</span><span>Spiral male/female (fitting-to-fitting)<small>Takes 80 mm off the cut length</small></span>
+      </button>
+    </div>`;
+
+  if (s.joint === "slip"){
+    html += `<div class="field full"><label>Number of slip joints in this run</label>
+      <input id="offsetSlipCount" type="number" inputmode="numeric" min="1" step="1" placeholder="e.g. 2" value="${s.slipCount ?? ''}" oninput="offsetSlipInput()"></div>`;
+  }
+
+  const jointReady = s.joint === "flange" || s.joint === "spiral" || (s.joint === "slip" && s.slipCount > 0);
+  if (!jointReady){
+    $("offsetBody").innerHTML = html;
+    setResult("offsetOut", `<span class="muted">Pick how the piece will be jointed to continue.</span>`);
+    return;
+  }
+
+  if (s.shape === "rect"){
+    html += `<div class="offset-step-label">Duct size</div>
+      <div class="form-grid">
+        <div class="field"><label>Duct width (mm)</label><input id="offsetDimwidth" type="number" inputmode="decimal" placeholder="400" value="${s.width ?? ''}" oninput="offsetDimInput('width')"></div>
+        <div class="field"><label>Duct depth (mm)</label><input id="offsetDimdepth" type="number" inputmode="decimal" placeholder="200" value="${s.depth ?? ''}" oninput="offsetDimInput('depth')"></div>
+      </div>`;
+    if (!(s.width > 0 && s.depth > 0)){
+      $("offsetBody").innerHTML = html;
+      setResult("offsetOut", `<span class="muted">Enter the duct width and depth to continue.</span>`);
+      return;
+    }
+    html += `<div class="field full"><label>Clear space available (mm) — optional</label>
+      <input id="offsetClearance" type="number" inputmode="decimal" placeholder="e.g. 350" value="${s.clearance ?? ''}" oninput="offsetClearanceInput()">
+      <span class="hint">Leave blank to skip the fit check.</span></div>`;
+  }
+
+  let allowance = 0, jointLabel = "";
+  if (s.joint === "flange")     { allowance = 10;               jointLabel = "mezz/flange, +10 mm"; }
+  else if (s.joint === "slip")  { allowance = 25*s.slipCount;    jointLabel = `slip joint × ${s.slipCount}, +${allowance} mm`; }
+  else                          { allowance = -80;               jointLabel = "spiral male/female, −80 mm"; }
+  const finalCut = L + allowance;
+
+  let out = `<div class="offset-step-label">Result</div>
+    <div class="offset-headline">${fmtSmart(finalCut)} mm</div>
+    <small class="muted">Diagonal cut length for this piece, joint allowance included (${jointLabel}).</small><br><br>
+    <h4>For reference</h4>
+    Sideways move: <strong>${fmtSmart(CC)} mm</strong><br>
+    Forward travel: <strong>${fmtSmart(E)} mm</strong><br>
+    Diagonal length before joint allowance: ${fmtSmart(L)} mm<br>`;
+
+  if (finalCut <= 0){
+    out += `<br><span class="badge badge-bad">Check your inputs</span> <small class="muted"> The joint allowance leaves a non-positive cut length — the diagonal space entered is too short for this angle and joint type.</small><br>`;
+  }
+
+  if (s.shape === "rect" && s.clearance > 0){
+    const governing = Math.max(s.width, s.depth);
+    const ratio = s.clearance / governing;
+    let fitText, fitBadge;
+    if (ratio >= 1.10)      { fitText = "Fits";                             fitBadge = "badge-good"; }
+    else if (ratio >= 1.00) { fitText = "Tight — within about 10% margin";  fitBadge = "badge-warn"; }
+    else                    { fitText = "Won't fit";                       fitBadge = "badge-bad"; }
+    out += `<br><h4>Fit check</h4>
+      <span class="badge ${fitBadge}">${fitText}</span><br>
+      <small class="muted">Duct's largest side is ${fmtSmart(governing)} mm against ${fmtSmart(s.clearance)} mm of clear space.</small><br>`;
+  }
+
+  out += offsetDiagramBlock("Diagram", s.angle, s.shape, L, CC, E, s.width, s.depth);
+  out += assumptionFooter("CC = L·sin(θ), E = L·cos(θ) for two equal bends of angle θ. Joint allowances: mezz/flange +10 mm, slip joint +25 mm per joint, spiral male/female −80 mm. Figures are for the diagonal cut piece only — always confirm against the actual fitting/spigot depths where they differ from these standard allowances.");
+
+  setResult("offsetOut", out);
+  $("offsetBody").innerHTML = html;
 }
 
 /* ---------- Duct Friction (Darcy-Weisbach + Colebrook) ---------- */

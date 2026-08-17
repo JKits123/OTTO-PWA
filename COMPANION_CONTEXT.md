@@ -1,6 +1,6 @@
 # COMPANION_CONTEXT — OTTO
 **Generated:** 2026-06-14
-**Last updated:** 2026-07-30 (Code Sonnet 5 — Steam Coil Estimator + collapsible UI reorg)
+**Last updated:** 2026-08-17 (Code Sonnet 5 — Duct Offset Calculator, guided wizard)
 **Scope:** OTTO only. Cross-companion references logged at bottom.
 
 ---
@@ -61,7 +61,7 @@ OTTO is in active development and substantially more complete than the pre-close
 
 ### Working calculator toolset (confirmed in `app.js` and `index.html`)
 
-**Air Systems:** Duct Sizer (live ductulator), Duct Friction (Darcy-Weisbach/Colebrook-White), Grilles (face & free-area velocity), Psychrometrics (dew point, enthalpy, humidity ratio, mixed air, SHR)
+**Air Systems:** Duct Sizer (live ductulator), Duct Friction (Darcy-Weisbach/Colebrook-White), Grilles (face & free-area velocity), Psychrometrics (dew point, enthalpy, humidity ratio, mixed air, SHR), Offset Calculator (guided diagonal cut-length wizard — see 4c)
 
 **Water & Public Health:** Water Flow (pure water + ethylene glycol + propylene glycol 10–50%), Pipe Friction (Hazen-Williams), Expansion Vessel & Pump Duty
 
@@ -114,6 +114,25 @@ The master brief also notes a planned restructure to `/core`, `/features`, `/exp
 ## 4a. UI reorganization (2026-07-30, DONE)
 
 All 8 tool sections (previously flat `<h3>` + `<section class="grid">`, 29 cards on one continuously-scrolling page) converted to `<details class="tool-section">` — collapsed by default, tap the header to expand, native disclosure triangle. New CSS in style.css (`.tool-section*`). Browser-verified: all sections collapsed on load, expand/collapse works, tool inside an expanded section opens correctly. New **"Heating & Coils"** section added (previously didn't exist — Water Flow/Pipe Friction/Expansion Vessel stayed under "Water & Public Health", which was always just water/pipe calcs despite the name; the master brief's original taxonomy specified Heating/Coils as its own bucket, confirmed with Jim before building). Section order: Air Systems & Ventilation → Heating & Coils → Water & Public Health → Refrigeration → Electrical → General Conversions → Diagnostics → Explain It Simply. service-worker.js cache bumped v18→v19 so offline PWA installs actually pick up the change.
+
+---
+
+## 4c. Duct Offset Calculator (2026-08-17, DONE)
+
+New tool card in Air Systems & Ventilation (`TOOLS.offset` in app.js, `offsetHTML`/`offsetInit`/`renderOffset` + helper functions). Departs deliberately from OTTO's usual "flat form + Calculate button" pattern — this is a guided, one-question-at-a-time wizard (own `OFFSET_STATE` object, progressive-disclosure render driven by `renderOffset()`, same pattern already used by the Duct Sizer's live solver rows and shape tabs, just extended to a longer multi-step chain):
+1. Shape (Round / Rectangular, reuses the existing `.ds-tab` shape-picker component from the Duct Sizer)
+2. Angle (30°/45°/60°/90°, mini SVG icon per button) — once picked, a larger labelled schematic diagram appears (letters only at this stage: L, E, CC, R, Ø d₁ — mirrors a manufacturer-style offset-bend reference diagram)
+3. Known value — one plain-language question at a time ("How far does the duct need to move sideways?" / "...space to run diagonally?" / "...far forward does the offset need to travel?"), each mapping to CC/L/E respectively (only in code — never surfaced as jargon in the UI copy); selecting one reveals a single number input, not a form. The "forward travel" (E) option is disabled at 90° with an inline explanation, since cos(90°)=0 makes it meaningless as a known input.
+4. Jointing method (mezz/flange +10mm, slip joint +25mm × user-entered joint count, spiral male/female −80mm) applied to the final cut length
+5. If rectangular: width + depth, then an optional clear-space-available check (Fits / Tight-within-~10% / Won't fit, comparing the duct's largest side against the entered clearance)
+
+Output: headline diagonal cut length (final, joint allowance included), sideways-move and forward-travel reference values, fit-check result if rectangular, and a labelled diagram with the actual computed numbers filled in (same SVG-drawing function reused between the symbolic step-2 preview and the final numeric output — `offsetDiagramSVG()`). Math: `CC = L·sin(θ)`, `E = L·cos(θ)` for two equal bends of angle θ, solved for whichever of the three is unknown.
+
+**One real bug found and fixed during browser verification, not assumed correct:** `Math.cos(90°)` in JS isn't exactly 0 (floating-point, ~6.12×10⁻¹⁷), so at 90° the derived forward-travel value printed as `6.12e-15 mm` instead of `0 mm` — a small but genuinely unprofessional-looking artifact for field use. Fixed by clamping CC/E to 0 when their computed magnitude is below `1e-6`.
+
+**Verified via a real running browser session, not code-read alone** (local Python HTTP server, drove the actual app functions in-page — `offsetSetShape`/`offsetSetAngle`/`offsetSetKnown`/`offsetKnownInput`/`offsetSetJoint`/`offsetSlipInput`/`offsetDimInput`/`offsetClearanceInput` — exactly as the real UI's onclick/oninput handlers would): confirmed the 45° round-trip (CC known 300mm → L 424.26mm, E 300mm, +2 slip joints → final 474.26mm — hand-checked), the 90° edge case (E correctly zero after the fix, L known 100mm → CC 100mm, spiral −80mm → final 20mm), a deliberately-too-short case correctly showing the non-positive-cut-length warning, and both rectangular fit-check branches (Fits at 500mm clearance vs 300mm duct, Won't fit at 250mm). Zero console errors across the flow. Added a temporary `otto-dev` entry to the root ORPHEUS `.claude/launch.json` (Python `http.server` on port 8791) so this and future OTTO sessions can browser-test through the Browser pane — left in place as reusable infrastructure, not removed after this session.
+
+`service-worker.js` cache bumped v19→v20 so the installed PWA actually picks up the new tool.
 
 ---
 

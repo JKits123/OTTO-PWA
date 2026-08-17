@@ -570,6 +570,52 @@ footer{
   font-weight:700;
 }
 
+/* ---------- Duct Offset Calculator ---------- */
+.offset-step-label{
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:.5px;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin:14px 0 8px;
+}
+.offset-step-label:first-child{margin-top:0}
+.offset-choice-row{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
+.offset-choice-btn{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  background:#fff;
+  border:2px solid var(--line);
+  border-radius:12px;
+  padding:12px 14px;
+  text-align:left;
+  font-weight:700;
+  font-size:14px;
+  color:var(--text);
+  width:100%;
+  line-height:1.3;
+}
+.offset-choice-btn small{display:block;font-weight:400;color:var(--muted);margin-top:3px;font-size:12px}
+.offset-choice-btn.active{border-color:var(--green);background:var(--green-soft);box-shadow:0 4px 10px rgba(22,163,74,.15)}
+.offset-choice-btn:disabled{opacity:.4}
+.offset-choice-btn .oc-icon{font-size:20px;flex-shrink:0;line-height:1.3}
+.offset-angle-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px}
+.offset-angle-btn{
+  background:#fff;
+  border:2px solid var(--line);
+  border-radius:12px;
+  padding:8px 4px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:4px;
+}
+.offset-angle-btn.active{border-color:var(--green);background:var(--green-soft);box-shadow:0 4px 10px rgba(22,163,74,.15)}
+.offset-angle-btn strong{font-size:15px}
+.offset-diagram{width:100%;height:auto;display:block;margin:6px 0 4px;background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:6px}
+.offset-headline{font-size:30px;font-weight:900;color:var(--green-dark);margin:4px 0}
+
 .gauge-block{margin-bottom:14px}
 .gauge-label{font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .gauge-track{
@@ -612,4 +658,5 @@ footer{
   .solver-row{grid-template-columns:24px 1fr 80px 40px;gap:6px;padding:6px 10px}
   .solver-input{font-size:14px;padding:6px 8px}
   .ds-tab{font-size:11px;padding:8px 4px}
+  .offset-angle-grid{grid-template-columns:repeat(2,1fr)}
 }
