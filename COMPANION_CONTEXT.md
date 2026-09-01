@@ -1,7 +1,15 @@
 # COMPANION_CONTEXT — OTTO
 **Generated:** 2026-06-14
-**Last updated:** 2026-08-17 (third session, Code Sonnet 5 — Offset Calculator: real input-order fix, previous session's focus fix was insufficient)
+**Last updated:** 2026-09-01 (Code Sonnet 5 — security audit: checked for the exposed shared "ZEUS - ORPHEUS" Anthropic key, none found)
 **Scope:** OTTO only. Cross-companion references logged at bottom.
+
+---
+
+## 0. Security audit — exposed shared "ZEUS - ORPHEUS" Anthropic key check (2026-09-01, CLEAN)
+
+`orpheus_backlog` `1c9180b2` (opened 2026-08-31): a shared Anthropic API key labelled "ZEUS - ORPHEUS" was found exposed in GENESIS's git history (separate backlog item `9b48b6ee`, GENESIS's own repo, not this one). Since OTTO-PWA also serves as a public repo/GitHub Pages site, this session was asked to check whether the same key is exposed here too.
+
+**Checked the full git history, not just the current HEAD** — fetched all 16 commits (this repo was a shallow depth-1 clone by default) and ran `git log --all -p -S"<term>"` (pickaxe search, catches a string added and later removed in any commit) for `anthropic`, `sk-ant`, `claude-3`/`claude-sonnet`/`claude-opus`, `ZEUS - ORPHEUS`, and `x-api-key`, plus a full `git grep` across every commit for anthropic-shaped strings. **Zero matches anywhere in the repo's full history.** Also grepped `app.js` (2,248 lines) directly for `fetch(`, `api.anthropic`, `claude`, `messages.create`, and `process.env` — zero matches. This is consistent with §6 below (already documented, independently reconfirmed here): OTTO-PWA is a fully static, offline-first PWA with no backend and no outbound API calls of any kind anywhere in the codebase — there is no code path that could have called the Anthropic API in the first place, so there was never a shared key to leak here. Nothing to remove or rotate. `orpheus_backlog` `1c9180b2` closed on this basis.
 
 ---
 
