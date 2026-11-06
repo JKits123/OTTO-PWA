@@ -100,6 +100,36 @@ function steamLookup(barg){
   return { Tsat: last[1], hfg: last[2], vg: last[3] };
 }
 
+/* DX coil sizer refrigerant data, generated 2026-11-06 from CoolProp.
+   evap: [Tevap °C (dew), Pdew bar g, h_g kJ/kg, cp of vapour kJ/kg·K over 0-10 K superheat]
+   liq:  [T °C, h_f kJ/kg] saturated liquid (used for the liquid line, subcooled liquid ~ h_f at its temperature).
+   Enthalpies share one reference per refrigerant, so only differences are meaningful.
+   R454B uses CoolProp's mixture model (estimated interaction parameters). */
+const DX_REF = {
+  R32: { evap: [[-15,3.87,511.6,1.064],[-12.5,4.32,512.3,1.082],[-10,4.81,513.0,1.101],[-7.5,5.34,513.7,1.120],[-5,5.89,514.3,1.141],[-2.5,6.49,514.8,1.162],[0,7.12,515.3,1.184],[2.5,7.79,515.7,1.207],[5,8.50,516.1,1.231],[7.5,9.26,516.4,1.256],[10,10.06,516.7,1.283],[12.5,10.90,516.8,1.311],[15,11.79,516.9,1.341],[17.5,12.74,517.0,1.372],[20,13.73,516.9,1.406]],
+           liq: [[10,217.7],[15,226.8],[20,236.1],[25,245.6],[30,255.3],[35,265.3],[40,275.6],[45,286.3],[50,297.5],[55,309.3],[60,321.9]] },
+  R410A: { evap: [[-15,3.79,416.2,0.977],[-12.5,4.23,417.1,0.992],[-10,4.71,418.0,1.008],[-7.5,5.22,418.9,1.025],[-5,5.77,419.8,1.042],[-2.5,6.35,420.6,1.060],[0,6.97,421.4,1.079],[2.5,7.62,422.1,1.098],[5,8.32,422.8,1.119],[7.5,9.06,423.5,1.141],[10,9.83,424.0,1.164],[12.5,10.66,424.6,1.188],[15,11.53,425.1,1.214],[17.5,12.45,425.5,1.241],[20,13.42,425.8,1.271]],
+           liq: [[10,215.4],[15,223.4],[20,231.5],[25,239.8],[30,248.4],[35,257.2],[40,266.3],[45,275.8],[50,285.9],[55,296.6],[60,308.5]] },
+  R134a: { evap: [[-15,0.63,389.6,0.833],[-12.5,0.80,391.2,0.842],[-10,0.99,392.7,0.852],[-7.5,1.20,394.2,0.861],[-5,1.42,395.7,0.871],[-2.5,1.66,397.1,0.881],[0,1.91,398.6,0.891],[2.5,2.19,400.1,0.902],[5,2.48,401.5,0.912],[7.5,2.80,402.9,0.924],[10,3.13,404.3,0.935],[12.5,3.49,405.7,0.947],[15,3.87,407.1,0.959],[17.5,4.27,408.4,0.972],[20,4.70,409.7,0.985]],
+           liq: [[10,213.6],[15,220.5],[20,227.5],[25,234.5],[30,241.7],[35,249.0],[40,256.4],[45,263.9],[50,271.6],[55,279.5],[60,287.5]] },
+  R454B: { evap: [[-15,3.38,462.2,1.007],[-12.5,3.80,463.2,1.022],[-10,4.24,464.2,1.037],[-7.5,4.71,465.2,1.054],[-5,5.21,466.1,1.070],[-2.5,5.74,467.0,1.088],[0,6.31,467.8,1.106],[2.5,6.92,468.6,1.125],[5,7.56,469.4,1.145],[7.5,8.24,470.1,1.165],[10,8.96,470.7,1.187],[12.5,9.72,471.3,1.209],[15,10.52,471.9,1.233],[17.5,11.37,472.4,1.258],[20,12.27,472.8,1.285]],
+           liq: [[10,223.0],[15,231.4],[20,240.1],[25,248.8],[30,257.9],[35,267.1],[40,276.6],[45,286.5],[50,296.8],[55,307.7],[60,319.3]] }
+};
+function dxInterp(rows, x, col){
+  const lo = rows[0], hi = rows[rows.length-1];
+  if (x <= lo[0]) return lo[col];
+  if (x >= hi[0]) return hi[col];
+  for (let i = 0; i < rows.length-1; i++){
+    const a = rows[i], b = rows[i+1];
+    if (x >= a[0] && x <= b[0]) return a[col] + (b[col]-a[col])*(x-a[0])/(b[0]-a[0]);
+  }
+  return NaN;
+}
+function dxTevapFromP(ref, barg){
+  const rows = DX_REF[ref].evap.map(r => [r[1], r[0]]);
+  return dxInterp(rows, barg, 1);
+}
+
 /* ---------- DOM helpers ---------- */
 const panel      = document.getElementById("toolPanel");
 const panelTitle = document.getElementById("panelTitle");
@@ -146,6 +176,7 @@ const TOOLS = {
   pipe:      { title: "Pipe Friction (Hazen-W)",   html: pipeHTML,       calc: calcPipe },
   expansion: { title: "Expansion Vessel & Pump",   html: expansionHTML,  calc: calcExpansion },
   steam:     { title: "Steam Coil Estimator",      html: steamHTML,      calc: calcSteam },
+  dxcoil:    { title: "DX Coil Sizer",             html: dxcoilHTML,     calc: calcDxCoil },
   offset:    { title: "Duct Offset Calculator",    html: offsetHTML,     calc: calcOffset, init: offsetInit },
   refcycle:  { title: "Superheat / Subcool",       html: refcycleHTML,   calc: calcRefCycle },
   fgas:      { title: "F-Gas / CO₂e",              html: fgasHTML,       calc: calcFgas },
@@ -1621,6 +1652,159 @@ function calcExpansion(){
 /* ==========================================================================
    HEATING / COILS
    ========================================================================== */
+
+function dxcoilHTML(){
+  const refOpts = Object.keys(DX_REF).map(r => `<option value="${r}"${r==="R32"?" selected":""}>${r}</option>`).join("");
+  return `
+  <div class="explain-tools-row">
+    <button type="button" class="explain-link" onclick="openExplanation('sensible_vs_latent')">💡 Sensible vs latent</button>
+  </div>
+  <small class="muted">Size a DX (direct-expansion) cooling coil. Give the airflow and the air on and off the coil, or just the duty you need. OTTO works out the duty, the coil face area and the refrigerant flow.</small>
+  <div class="form-grid">
+    <div class="field full"><label>Refrigerant</label><select id="dxRef">${refOpts}</select></div>
+    <div class="field"><label>Airflow (l/s)</label><input id="dxQ" type="number" inputmode="decimal" placeholder="500"></div>
+    <div class="field"><label>Or required duty (kW)</label><input id="dxKw" type="number" inputmode="decimal" placeholder="optional"></div>
+  </div>
+  <fieldset>
+    <legend>Air on / off the coil</legend>
+    <div class="form-grid">
+      <div class="field"><label>On-coil dry bulb (°C)</label><input id="dxTon" type="number" inputmode="decimal" placeholder="27"></div>
+      <div class="field"><label>On-coil RH %</label><input id="dxRHon" type="number" inputmode="decimal" placeholder="47"></div>
+      <div class="field"><label>Off-coil dry bulb (°C)</label><input id="dxToff" type="number" inputmode="decimal" placeholder="13"></div>
+      <div class="field"><label>Off-coil RH % (blank = 90%)</label><input id="dxRHoff" type="number" inputmode="decimal" placeholder="90"></div>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Refrigerant side</legend>
+    <div class="form-grid">
+      <div class="field"><label>Evaporating temp (°C, blank = 5)</label><input id="dxTe" type="number" inputmode="decimal" placeholder="5"></div>
+      <div class="field"><label>Or suction pressure (bar g)</label><input id="dxPe" type="number" inputmode="decimal" placeholder="optional"></div>
+      <div class="field"><label>Superheat (K, blank = 5)</label><input id="dxSH" type="number" inputmode="decimal" placeholder="5"></div>
+      <div class="field"><label>Liquid line temp (°C, blank = 35)</label><input id="dxTl" type="number" inputmode="decimal" placeholder="35"></div>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Coil face</legend>
+    <div class="form-grid three">
+      <div class="field"><label>Face velocity (m/s, blank = 2.5)</label><input id="dxVf" type="number" inputmode="decimal" placeholder="2.5"></div>
+      <div class="field"><label>Existing coil width (mm)</label><input id="dxW" type="number" inputmode="decimal" placeholder="optional"></div>
+      <div class="field"><label>Existing coil height (mm)</label><input id="dxH" type="number" inputmode="decimal" placeholder="optional"></div>
+    </div>
+  </fieldset>
+  <div id="dxOut" class="result muted">Enter the airflow and the on/off coil conditions (or a required duty) to size the coil.</div>`;
+}
+
+/* Moist-air state at sea level: humidity ratio W (kg/kg) and enthalpy h (kJ/kg dry air) */
+function dxAir(T, RH){
+  const pw = (RH/100)*pSat(T);
+  const W  = 0.622*pw/(P_ATM-pw);
+  return { W, h: 1.006*T + W*(2501 + 1.86*T), Td: dewPoint(pw) };
+}
+
+function calcDxCoil(){
+  const ref = v("dxRef") || "R32";
+  const data = DX_REF[ref];
+  const qLs = n("dxQ"), kwIn = n("dxKw");
+  const hasAirIn = v("dxTon") !== "" && v("dxToff") !== "" && v("dxRHon") !== "";
+  const tOn = n("dxTon"), tOff = n("dxToff"), rhOn = n("dxRHon");
+  const rhOff = v("dxRHoff") === "" ? 90 : n("dxRHoff");
+  const badgeMap = {good:"badge-good", warn:"badge-warn", bad:"badge-bad", info:"badge-info"};
+  const notes = [];
+
+  if (!(qLs > 0 && hasAirIn) && !(kwIn > 0)){
+    setResult("dxOut", `<span class="bad">Enter the airflow with on-coil temperature, on-coil RH and off-coil temperature — or a required duty in kW.</span>`);
+    return;
+  }
+
+  let html = "";
+  let qTot = null, qSen = null, qLat = null;
+
+  if (qLs > 0 && hasAirIn){
+    if (rhOn <= 0 || rhOn > 100 || rhOff <= 0 || rhOff > 100){
+      setResult("dxOut", `<span class="bad">Relative humidity must be between 1 and 100%.</span>`); return;
+    }
+    if (tOff >= tOn){
+      setResult("dxOut", `<span class="bad">Off-coil air must be cooler than on-coil air for a cooling coil.</span>`); return;
+    }
+    const on = dxAir(tOn, rhOn), off0 = dxAir(tOff, rhOff);
+    // The coil can't add moisture: if the off-coil RH gives more moisture than the air came in with, it's dry cooling.
+    const off = off0.W > on.W ? { W: on.W, h: 1.006*tOff + on.W*(2501 + 1.86*tOff), Td: on.Td } : off0;
+    if (off0.W > on.W) notes.push("The off-coil RH would mean the coil adds moisture, which it can't — treated as dry cooling (no moisture removed).");
+    const mDa = RHO_AIR * qLs/1000;                    // kg/s
+    qTot = mDa * (on.h - off.h);
+    qSen = mDa * (1.006 + 1.86*on.W) * (tOn - tOff);
+    qLat = Math.max(0, qTot - qSen);
+    if (qSen > qTot) qTot = qSen;
+    const shr = qSen / qTot;
+    const m3s = qLs/1000;
+    html += `<h4>Coil duty</h4>
+      Total <strong>${fmtSmart(qTot)} kW</strong> = sensible ${fmtSmart(qSen)} kW + latent ${fmtSmart(qLat)} kW &nbsp;<span class="badge badge-info">SHR ${fmt(shr,2)}</span><br>
+      <small class="muted">Air on ${fmtSmart(tOn)} °C / ${fmtSmart(rhOn)}% (dew point ${fmtSmart(on.Td)} °C, ${fmt(on.W*1000,1)} g/kg) → off ${fmtSmart(tOff)} °C / ${fmtSmart(rhOff)}%${v("dxRHoff")===""?" (assumed)":""} (${fmt(off.W*1000,1)} g/kg). ${fmtSmart(m3s)} m³/s × 1.2 kg/m³ × enthalpy drop ${fmtSmart(on.h-off.h)} kJ/kg.</small><br>`;
+    if (kwIn > 0){
+      const r = qTot / kwIn;
+      const st = r >= 0.9 && r <= 1.1 ? "good" : "warn";
+      html += `<span class="badge ${badgeMap[st]}">${st==="good"?"Air-side duty matches":"Air-side duty differs from"} the ${fmtSmart(kwIn)} kW you entered (${Math.round(r*100)}%)</span><br>`;
+    }
+    html += `<br>`;
+  } else {
+    qTot = kwIn;
+    html += `<h4>Coil duty</h4>Using the duty you entered: <strong>${fmtSmart(qTot)} kW</strong> total.<br><small class="muted">Add airflow and on/off coil conditions to split it into sensible and latent.</small><br><br>`;
+  }
+
+  // Refrigerant side
+  let tE;
+  if (v("dxPe") !== ""){
+    tE = dxTevapFromP(ref, n("dxPe"));
+  } else {
+    tE = v("dxTe") === "" ? 5 : n("dxTe");
+  }
+  const sh = v("dxSH") === "" ? 5 : n("dxSH");
+  const tL = v("dxTl") === "" ? 35 : n("dxTl");
+  const ev = data.evap, lq = data.liq;
+  if (tE < ev[0][0] || tE > ev[ev.length-1][0]) notes.push(`Evaporating temperature ${fmtSmart(tE)} °C is outside the table (${ev[0][0]} to ${ev[ev.length-1][0]} °C) — the nearest end is used.`);
+  if (tL < lq[0][0] || tL > lq[lq.length-1][0]) notes.push(`Liquid temperature ${fmtSmart(tL)} °C is outside the table (${lq[0][0]} to ${lq[lq.length-1][0]} °C) — the nearest end is used.`);
+  const hG = dxInterp(ev, tE, 2), cpV = dxInterp(ev, tE, 3), pE = dxInterp(ev, tE, 1);
+  const hVap = hG + cpV * Math.max(0, sh);
+  const hLiq = dxInterp(lq, tL, 1);
+  const dh = hVap - hLiq;
+  const mRef = qTot / dh;            // kg/s
+  html += `<h4>Refrigerant flow (${ref})</h4>
+    <strong>${fmtSmart(mRef*1000)} g/s</strong> (${fmtSmart(mRef*3600)} kg/h)<br>
+    <small class="muted">Evaporating ${fmtSmart(tE)} °C (${fmtSmart(pE)} bar g)${v("dxPe")!==""?" from the suction pressure":v("dxTe")===""?" (assumed)":""}, ${fmtSmart(sh)} K superheat${v("dxSH")===""?" (assumed)":""}, liquid ${fmtSmart(tL)} °C${v("dxTl")===""?" (assumed)":""}. Refrigerating effect ${fmtSmart(dh)} kJ/kg.</small><br>`;
+  if (qLs > 0 && hasAirIn){
+    if (tE >= tOff) notes.push(`The evaporating temperature (${fmtSmart(tE)} °C) is not below the off-coil air (${fmtSmart(tOff)} °C) — the coil can't cool the air that far. Lower the evaporating temperature or raise the off-coil target.`);
+    else if (tOff - tE < 4) notes.push(`Only ${fmtSmart(tOff-tE)} K between off-coil air and evaporating temperature — that needs a very deep coil. 6–10 K is usual.`);
+    if (qLat > 0 && tE > dxAir(tOn, rhOn).Td) notes.push("The evaporating temperature is above the on-coil dew point, so the coil can't remove the moisture shown — expect less latent duty than this.");
+  }
+  html += `<br>`;
+
+  // Face
+  if (qLs > 0){
+    const vF = v("dxVf") === "" ? 2.5 : n("dxVf");
+    const area = (qLs/1000) / vF;
+    const side = Math.sqrt(area);
+    html += `<h4>Coil face</h4>
+      Face area needed: <strong>${fmtSmart(area)} m²</strong> at ${fmtSmart(vF)} m/s${v("dxVf")===""?" (assumed)":""} — e.g. ${Math.round(side*1000/10)*10} × ${Math.round(side*1000/10)*10} mm.<br>
+      <small class="muted">Keep cooling coils at or below about 2.5 m/s face velocity, or condensate can be blown off the fins into the duct.</small><br>`;
+    const wMm = n("dxW"), hMm = n("dxH");
+    if (wMm > 0 && hMm > 0){
+      const vFace = (qLs/1000)/((wMm/1000)*(hMm/1000));
+      const st = vFace <= 2.5 ? "good" : vFace <= 3.0 ? "warn" : "bad";
+      const txt = st==="good" ? "OK for a cooling coil" : st==="warn" ? "High — watch for condensate carry-over" : "Too high — condensate carry-over likely";
+      html += `Existing ${fmtSmart(wMm)} × ${fmtSmart(hMm)} mm coil: <strong>${fmtSmart(vFace)} m/s</strong> &nbsp;<span class="badge ${badgeMap[st]}">${txt}</span><br>`;
+    }
+    html += `<br>`;
+  }
+
+  // Nominal unit size
+  const sizes = [2.0,2.5,3.5,5.0,6.0,7.1,8.0,10.0,12.5,14.0,16.0,20.0,22.4,25.0,28.0];
+  const nom = sizes.find(s => s >= qTot);
+  html += `<h4>Nearest standard unit</h4>${nom ? `<strong>${nom} kW</strong> nominal` : `Above ${sizes[sizes.length-1]} kW — multiple units or a bespoke coil`}<br>
+    <small class="muted">Nominal ratings are at standard conditions (27 °C / 19 °C wet bulb on-coil, 35 °C outdoor). Check the manufacturer's capacity table at your real conditions before ordering.</small>`;
+
+  if (notes.length) html += `<br><br>` + notes.map(t => `<span class="badge badge-warn">Check</span> <small>${t}</small>`).join("<br>");
+  setResult("dxOut", html);
+}
 
 function steamHTML(){
   return `
