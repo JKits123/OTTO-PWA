@@ -230,3 +230,10 @@ The flat-root code structure remains low priority — do not refactor until the 
 ## Cross-companion references found
 
 None. No references to VIGIL, SENTINEL, AEGIS, ORCHID, THERMIS, PLATO, or HERMES appear in any OTTO file.
+
+## 2026-11-06 (Code) — DX Coil Sizer
+- New tool in Heating & Coils (`dxcoil`, `dxcoilHTML`/`calcDxCoil` in app.js). Airflow (l/s) + on-coil DB/RH + off-coil DB (RH blank = 90%) -> total/sensible/latent kW and SHR; or a required duty in kW (cross-checked if both).
+- Refrigerant side: R32, R410A, R454B, R134a from `DX_REF` (CoolProp-generated: dew-point evaporating table + saturated liquid table). Evaporating temp or suction pressure (bar g), superheat (5 K default), liquid temp (35 °C default) -> refrigerating effect and mass flow.
+- Face area at a chosen velocity (2.5 m/s default) and an existing coil's face velocity check; nearest standard unit size; warnings for evaporating temp not below off-coil air, above on-coil dew point, impossible off-coil moisture.
+- Verified vs CoolProp humid-air + refrigerant calc within 0.3% (500 l/s, 27 °C/47% -> 13 °C: 11.75 kW; R32 45.7 g/s). Cache v22 -> v23. Commit 1a32e07, GitHub Pages build success.
+- Noted, not changed: the existing Superheat tool's SAT table (bar abs, +1 bar) reads about 0.3 K off at 8 bar g from its 10 K table steps.
